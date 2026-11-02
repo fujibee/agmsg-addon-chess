@@ -138,6 +138,7 @@ test("nothing is started before Start; Start starts exactly two, each with its o
   assert.deepEqual(f.spawned[0], { type: "claude-code", name: "white", model: "opus" });
   assert.deepEqual(f.spawned[1], { type: "codex", name: "black" });
   assert.deepEqual(m.labels, { w: "claude-code \u00b7 opus", b: "codex" });
+  assert.deepEqual(m.sides, { w: { type: "claude-code", model: "opus" }, b: { type: "codex", model: "" } });
 });
 
 test("a rematch with swapped colours reuses the running agents and says it is a new game", async () => {

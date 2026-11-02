@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { acceptsModel, defaultSetup, load, mergeSaved, save, sideLabel, swapSides } from "../app-panes/chess/web/setup.js";
+import { acceptsModel, defaultSetup, edgeLabel, load, mergeSaved, save, sideLabel, swapSides } from "../app-panes/chess/web/setup.js";
 
 const TYPES = [
   { type: "claude-code", models: true },
@@ -45,4 +45,11 @@ test("the choice is remembered, and storage that throws or holds junk never brea
   const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
   assert.deepEqual(load(broken, TYPES), defaultSetup(TYPES));
   assert.doesNotThrow(() => save(broken, defaultSetup(TYPES)));
+});
+
+test("the edge label names the model, or says CLI default for a CLI that takes one", () => {
+  assert.equal(edgeLabel({ type: "claude-code", model: "opus" }, TYPES), "claude-code \u00b7 opus");
+  assert.equal(edgeLabel({ type: "claude-code", model: "" }, TYPES), "claude-code \u00b7 CLI default");
+  assert.equal(edgeLabel({ type: "gemini", model: "" }, TYPES), "gemini");
+  assert.equal(edgeLabel(null, TYPES), "");
 });

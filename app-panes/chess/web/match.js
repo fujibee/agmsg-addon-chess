@@ -46,6 +46,7 @@ export function createMatch({ app, onChange = () => {} }) {
     error: "",
     askedAt: 0, // when the side to move was last asked, ms since epoch
     labels: { w: "", b: "" }, // "claude-code · haiku", shown at each side of the board
+    sides: { w: null, b: null }, // what was chosen for each side: { type, model }
     spawned: 0, // how many agents this pane has started (the page never starts any before Start)
     previous: [], // agents of an earlier pair that are still running after "Change players"
     again: false, // the next prompts open a new game for agents that already played one
@@ -86,6 +87,7 @@ export function createMatch({ app, onChange = () => {} }) {
         if (problem) throw new Error(problem);
         m.players[side] = entry.name;
         m.labels[side] = wanted ? `${type} \u00b7 ${wanted}` : type;
+        m.sides[side] = { type, model: wanted ?? "" };
         say(`${entry.name} (${side === "w" ? "white" : "black"}) is ${entry.state}`);
       }
       m.phase = "playing";
@@ -112,6 +114,7 @@ export function createMatch({ app, onChange = () => {} }) {
     if (swap) {
       m.players = { w: m.players.b, b: m.players.w };
       m.labels = { w: m.labels.b, b: m.labels.w };
+      m.sides = { w: m.sides.b, b: m.sides.w };
     }
     m.phase = "playing";
     onChange(m);
@@ -129,6 +132,7 @@ export function createMatch({ app, onChange = () => {} }) {
     m.error = "";
     m.players = { w: "", b: "" };
     m.labels = { w: "", b: "" };
+    m.sides = { w: null, b: null };
     reset();
     m.again = false;
     m.phase = "idle";

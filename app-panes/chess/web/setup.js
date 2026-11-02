@@ -34,6 +34,12 @@ export function sideLabel({ type, model }) {
   return model ? `${type} · ${model}` : type;
 }
 
+/** The label at the edge of the board: the chosen model, or "CLI default" for a CLI that takes one and was given none. */
+export function edgeLabel(side, types) {
+  if (!side?.type) return "";
+  return side.model ? `${side.type} \u00b7 ${side.model}` : acceptsModel(types, side.type) ? `${side.type} \u00b7 CLI default` : side.type;
+}
+
 export function swapSides(setup) {
   return { w: { ...setup.b }, b: { ...setup.w } };
 }

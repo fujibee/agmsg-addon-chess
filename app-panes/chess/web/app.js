@@ -2,7 +2,7 @@ import { connect } from "./agmsg-addon.js";
 import { createMatch, waitingHint } from "./match.js";
 import { moveList } from "./game.js";
 import { createBoard3d, webglAvailable } from "./board3d.js";
-import { SUGGESTIONS, acceptsModel, defaultSetup, load, save, sideLabel, swapSides } from "./setup.js";
+import { SUGGESTIONS, acceptsModel, defaultSetup, edgeLabel, load, save, sideLabel, swapSides } from "./setup.js";
 
 const PIECE = {
   wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
@@ -71,7 +71,7 @@ function renderText(m) {
   $("still").textContent = m.previous.length ? "The previous players are still running; close their panes if you don't need them." : "";
   for (const side of ["w", "b"]) {
     const who = $(`who-${side}`);
-    const label = m.labels[side] || (idle ? sideLabel(setup[side]) : "");
+    const label = edgeLabel(m.sides[side] ?? (idle ? setup[side] : null), types);
     who.querySelector(".name").textContent = label ? `${side === "w" ? "White" : "Black"} · ${label}` : "";
     who.classList.toggle("on", m.phase === "playing" && m.chess.turn() === side);
   }
