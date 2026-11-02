@@ -1,5 +1,5 @@
 import { connect } from "./agmsg-addon.js";
-import { createMatch, waitingHint } from "./match.js";
+import { createMatch, startingText, waitingHint } from "./match.js";
 import { moveList } from "./game.js";
 import { createBoard3d, webglAvailable } from "./board3d.js";
 import { SUGGESTIONS, acceptsModel, defaultSetup, edgeLabel, load, save, sideLabel, swapSides } from "./setup.js";
@@ -61,7 +61,7 @@ function renderText(m) {
   $("moves").textContent = moveList(m.chess);
   const turn = m.chess.turn() === "w" ? m.players.w || "white" : m.players.b || "black";
   $("status").textContent =
-    m.phase === "starting" ? "Starting the players…"
+    m.phase === "starting" ? startingText(m) || "Starting the players…"
     : m.phase === "playing" ? `${turn} to move${m.problems ? ` · ${m.problems} refused` : ""}`
     : m.phase === "over" ? m.result
     : m.phase === "error" ? `Stopped: ${m.error}`
@@ -84,10 +84,12 @@ function renderText(m) {
 function showHint() {
   if (!match) return;
   $("hint").textContent = waitingHint(match);
+  if (match.phase === "starting") $("status").textContent = startingText(match);
   const secs = match.askedAt ? Math.max(0, Math.round((Date.now() - match.askedAt) / 1000)) : 0;
   for (const side of ["w", "b"]) {
     const turn = match.phase === "playing" && match.chess.turn() === side;
-    $(`who-${side}`).querySelector(".turn").textContent = turn ? `thinking… ${secs}s` : "";
+    const sent = match.sending && match.sending.to === match.players[side] ? Math.round((Date.now() - match.sending.since) / 1000) : null;
+    $(`who-${side}`).querySelector(".turn").textContent = sent !== null ? `sending… ${sent}s` : turn ? `thinking… ${secs}s` : "";
   }
 }
 setInterval(showHint, 1000);

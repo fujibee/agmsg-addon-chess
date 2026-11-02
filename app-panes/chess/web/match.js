@@ -34,6 +34,20 @@ export function spawnProblem(entry, want) {
   }
 }
 
+/** What the pane shows while the players start: each side's progress with its own timer, so it never looks frozen. */
+export function startingText(m, now = Date.now()) {
+  if (m.phase !== "starting") return "";
+  return ["w", "b"]
+    .map((side) => {
+      const p = m.progress[side];
+      const name = side === "w" ? "White" : "Black";
+      if (!p) return `${name}…`;
+      const secs = Math.max(0, Math.round((now - p.since) / 1000));
+      return p.state === "ready" ? `${name} ready` : p.state === "failed" ? `${name} could not start` : `starting ${name}… ${secs} s`;
+    })
+    .join(" · ");
+}
+
 export function createMatch({ app, onChange = () => {} }) {
   const m = {
     phase: "idle", // idle | starting | playing | over | error
@@ -50,6 +64,8 @@ export function createMatch({ app, onChange = () => {} }) {
     spawned: 0, // how many agents this pane has started (the page never starts any before Start)
     previous: [], // agents of an earlier pair that are still running after "Change players"
     again: false, // the next prompts open a new game for agents that already played one
+    progress: { w: null, b: null }, // while starting: { state: starting|ready|failed, since }
+    sending: null, // the send in flight: { to, since }
     run: 1, // which pair this is: the host hands back the same agent for the same requested name
     gameStart: 0, // when this game began, ms since epoch; replies written before it are not moves
   };
@@ -65,12 +81,28 @@ export function createMatch({ app, onChange = () => {} }) {
     onChange(m);
   };
 
-  async function ask(problem = "") {
+  // Sends go one after another through this chain, so two never overlap and a slow one (some machines take seconds
+  // per message) does not hold up anything else: the board is drawn before the send starts, and `m.sending` says
+  // which send is in flight.
+  let sends = Promise.resolve();
+  function ask(problem = "") {
     const side = m.chess.turn();
     const first = !introduced.has(side);
     introduced.add(side);
     m.askedAt = Date.now();
-    await app.messages.send(m.players[side], turnPrompt(m.chess, { first, problem, again: m.again }));
+    const to = m.players[side];
+    const body = turnPrompt(m.chess, { first, problem, again: m.again });
+    const run = sends.then(async () => {
+      m.sending = { to, since: Date.now() };
+      onChange(m);
+      try {
+        await app.messages.send(to, body);
+      } finally {
+        m.sending = null;
+      }
+    });
+    sends = run.catch(() => {});
+    return run;
   }
 
   /** `setup` is { w: { type, model? }, b: { type, model? } }; a bare (type, model) means both sides the same. */
@@ -81,20 +113,32 @@ export function createMatch({ app, onChange = () => {} }) {
     onChange(m);
     try {
       m.me = (await app.team.join()).name;
-      // Asking the host again for the same name returns the agent it already made (and only resumes a joined one), so
-      // every new pair asks for its own names.
-      for (const [side, base] of [["w", "white"], ["b", "black"]]) {
-        const want = m.run === 1 ? base : `${base}-${m.run}`;
+      // Both players start at once: on a slow machine one start takes over a minute, and they do not depend on each
+      // other. Asking the host again for the same name returns the agent it already made (and only resumes a joined
+      // one), so every new pair asks for its own names.
+      const starting = ["w", "b"].map(async (side) => {
+        const want = (side === "w" ? "white" : "black") + (m.run === 1 ? "" : `-${m.run}`);
         const { type, model: wanted } = sides[side];
-        const entry = await app.agents.spawn(type, want, wanted ? { model: wanted } : {});
-        m.spawned++;
-        const problem = spawnProblem(entry, want);
-        if (problem) throw new Error(problem);
-        m.players[side] = entry.name;
-        m.labels[side] = wanted ? `${type} \u00b7 ${wanted}` : type;
-        m.sides[side] = { type, model: wanted ?? "" };
-        say(`${entry.name} (${side === "w" ? "white" : "black"}) is ${entry.state}`);
-      }
+        m.progress[side] = { state: "starting", since: Date.now() };
+        onChange(m);
+        try {
+          const entry = await app.agents.spawn(type, want, wanted ? { model: wanted } : {});
+          m.spawned++;
+          if (entry.state !== "failed") m.players[side] = entry.name;
+          m.labels[side] = wanted ? `${type} \u00b7 ${wanted}` : type;
+          m.sides[side] = { type, model: wanted ?? "" };
+          const problem = spawnProblem(entry, want);
+          if (problem) throw new Error(problem);
+          m.progress[side] = { state: "ready", since: Date.now() };
+          say(`${entry.name} (${side === "w" ? "white" : "black"}) is ${entry.state}`);
+        } catch (e) {
+          m.progress[side] = { state: "failed", since: Date.now() };
+          throw e;
+        }
+      });
+      const settled = await Promise.allSettled(starting);
+      const failed = settled.find((r) => r.status === "rejected");
+      if (failed) throw failed.reason;
       m.phase = "playing";
       m.gameStart = Date.now();
       onChange(m);

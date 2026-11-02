@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createMatch } from "../app-panes/chess/web/match.js";
+import { createMatch, startingText } from "../app-panes/chess/web/match.js";
 import { legalUci, newGame } from "../app-panes/chess/web/game.js";
 import { Chess } from "../app-panes/chess/web/chess.js";
 
@@ -227,4 +227,44 @@ test("Start(a/b), Change players, Start(c/d) leaves four agents and the new pair
   assert.deepEqual(f.spawned.slice(2).map((s) => [s.type, s.name, s.model]), [["gemini", "white-2", "x"], ["claude-code", "black-2", "haiku"]]);
   assert.deepEqual(m.sides, { w: { type: "gemini", model: "x" }, b: { type: "claude-code", model: "haiku" } });
   assert.deepEqual(m.previous, ["white", "black"]);
+});
+
+test("both players start at once, each with its own progress; one failing still records the other", async () => {
+  const f = fakeApp();
+  const gates = {};
+  f.app.agents.spawn = (type, name, opts = {}) => new Promise((resolve) => { gates[name] = () => resolve(name === "black" ? { name, type, state: "failed", reason: "no such CLI" } : { name, type, state: "running", pid: 1 }); f.spawned.push({ type, name, ...opts }); });
+  const m = createMatch({ app: f.app });
+  const started = m.start({ w: { type: "claude-code" }, b: { type: "codex" } });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(f.spawned.map((s) => s.name), ["white", "black"], "both asked before either answered");
+  assert.equal(m.phase, "starting");
+  assert.match(startingText(m, Date.now() + 40_000), /starting White… 4\d s · starting Black… 4\d s/);
+  gates.white();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.match(startingText(m), /White ready · starting Black/);
+  gates.black();
+  await started;
+  assert.equal(m.phase, "error");
+  assert.match(m.error, /black could not start: no such CLI/);
+  assert.equal(m.players.w, "white");
+  assert.equal(m.players.b, "");
+  m.changePlayers();
+  assert.deepEqual(m.previous, ["white"]);
+  assert.equal(f.sent.length, 0);
+});
+
+test("sends go one after another and say which one is in flight", async () => {
+  const f = fakeApp();
+  const order = [];
+  let release;
+  f.app.messages.send = (to, body) => { order.push(`start ${to}`); return new Promise((r) => { release = () => { order.push(`end ${to}`); r({ to }); }; }); };
+  const m = createMatch({ app: f.app });
+  const started = m.start("claude-code");
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(m.phase, "playing", "the board is playable while the first send is in flight");
+  assert.equal(m.sending.to, "white");
+  assert.deepEqual(order, ["start white"]);
+  release();
+  await started;
+  assert.equal(m.sending, null);
 });
