@@ -45,6 +45,10 @@ export function createMatch({ app, onChange = () => {} }) {
     result: "",
     error: "",
     askedAt: 0, // when the side to move was last asked, ms since epoch
+    labels: { w: "", b: "" }, // "claude-code · haiku", shown at each side of the board
+    spawned: 0, // how many agents this pane has started (the page never starts any before Start)
+    previous: [], // agents of an earlier pair that are still running after "Change players"
+    again: false, // the next prompts open a new game for agents that already played one
   };
   const seen = new Set();
   const introduced = new Set();
@@ -63,20 +67,25 @@ export function createMatch({ app, onChange = () => {} }) {
     const first = !introduced.has(side);
     introduced.add(side);
     m.askedAt = Date.now();
-    await app.messages.send(m.players[side], turnPrompt(m.chess, { first, problem }));
+    await app.messages.send(m.players[side], turnPrompt(m.chess, { first, problem, again: m.again }));
   }
 
-  m.start = async (type, model) => {
+  /** `setup` is { w: { type, model? }, b: { type, model? } }; a bare (type, model) means both sides the same. */
+  m.start = async (setup, model) => {
     if (m.phase !== "idle") return;
+    const sides = typeof setup === "string" ? { w: { type: setup, model }, b: { type: setup, model } } : setup;
     m.phase = "starting";
     onChange(m);
     try {
       m.me = (await app.team.join()).name;
       for (const [side, want] of [["w", "white"], ["b", "black"]]) {
-        const entry = await app.agents.spawn(type, want, model ? { model } : {});
+        const { type, model: wanted } = sides[side];
+        const entry = await app.agents.spawn(type, want, wanted ? { model: wanted } : {});
+        m.spawned++;
         const problem = spawnProblem(entry, want);
         if (problem) throw new Error(problem);
         m.players[side] = entry.name;
+        m.labels[side] = wanted ? `${type} \u00b7 ${wanted}` : type;
         say(`${entry.name} (${side === "w" ? "white" : "black"}) is ${entry.state}`);
       }
       m.phase = "playing";
@@ -85,6 +94,45 @@ export function createMatch({ app, onChange = () => {} }) {
     } catch (e) {
       fail(e);
     }
+  };
+
+  function reset() {
+    m.chess = newGame();
+    m.problems = 0;
+    m.result = "";
+    m.log = [];
+    introduced.clear();
+    m.again = true;
+  }
+
+  /** Another game with the agents that are already running: nothing is started. `swap` trades the colours. */
+  m.rematch = async ({ swap = false } = {}) => {
+    if (m.phase !== "over") return;
+    reset();
+    if (swap) {
+      m.players = { w: m.players.b, b: m.players.w };
+      m.labels = { w: m.labels.b, b: m.labels.w };
+    }
+    m.phase = "playing";
+    onChange(m);
+    try {
+      await ask();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  /** Back to the setup. The pair that played keeps running; a new Start starts two more. */
+  m.changePlayers = () => {
+    if (m.phase !== "over" && m.phase !== "error") return;
+    m.previous = [...m.previous, m.players.w, m.players.b].filter(Boolean);
+    m.error = "";
+    m.players = { w: "", b: "" };
+    m.labels = { w: "", b: "" };
+    reset();
+    m.again = false;
+    m.phase = "idle";
+    onChange(m);
   };
 
   m.onMessage = async (msg) => {

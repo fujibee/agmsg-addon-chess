@@ -9,11 +9,17 @@ function fakeApp({ spoil = () => null } = {}) {
   let seed = 7;
   const rnd = (n) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n);
   const sent = [];
+  const spawned = [];
   let id = 0;
   let match;
   const app = {
     team: { join: async () => ({ name: "chess", type: "app-addon", created: true }) },
-    agents: { spawn: async (type, name) => ({ name, type, state: "running", pid: 10 }) },
+    agents: {
+      spawn: async (type, name, opts = {}) => {
+        spawned.push({ type, name, ...opts });
+        return { name: `${name}${spawned.length > 2 ? "-" + spawned.length : ""}`, type, state: "running", pid: 10 };
+      },
+    },
     messages: {
       send: async (to, body) => {
         sent.push({ to, body });
@@ -26,7 +32,7 @@ function fakeApp({ spoil = () => null } = {}) {
       },
     },
   };
-  return { app, sent, bind: (m) => (match = m) };
+  return { app, sent, spawned, bind: (m) => (match = m) };
 }
 
 test("two agents play a whole game; bad replies are asked again", async () => {
@@ -111,4 +117,70 @@ test("an opening player lets the game go on: the app finishes opening it", async
   await m.start("claude-code");
   assert.equal(m.phase, "playing");
   assert.equal(f.sent.length, 1);
+});
+
+function playedGame(setup) {
+  const f = fakeApp();
+  let finish;
+  const done = new Promise((r) => (finish = r));
+  const m = createMatch({ app: f.app, onChange: (s) => (s.phase === "over" || s.phase === "error") && finish(s) });
+  f.bind(m);
+  return { f, m, play: () => { void m.start(setup); return done; } };
+}
+const SETUP = { w: { type: "claude-code", model: "opus" }, b: { type: "codex" } };
+
+test("nothing is started before Start; Start starts exactly two, each with its own type and model", async () => {
+  const { f, m, play } = playedGame(SETUP);
+  assert.equal(f.spawned.length, 0);
+  assert.equal(m.phase, "idle");
+  await play();
+  assert.equal(f.spawned.length, 2);
+  assert.deepEqual(f.spawned[0], { type: "claude-code", name: "white", model: "opus" });
+  assert.deepEqual(f.spawned[1], { type: "codex", name: "black" });
+  assert.deepEqual(m.labels, { w: "claude-code \u00b7 opus", b: "codex" });
+});
+
+test("a rematch with swapped colours reuses the running agents and says it is a new game", async () => {
+  const { f, m, play } = playedGame(SETUP);
+  await play();
+  const [w, b] = [m.players.w, m.players.b];
+  f.sent.length = 0;
+  f.bind({ onMessage() {} }); // stop the scripted replies; only the first prompt matters
+  await m.rematch({ swap: true });
+  assert.equal(f.spawned.length, 2, "no new agent");
+  assert.equal(m.phase, "playing");
+  assert.deepEqual([m.players.w, m.players.b], [b, w]);
+  assert.deepEqual(m.labels, { w: "codex", b: "claude-code \u00b7 opus" });
+  assert.equal(m.chess.history().length, 0);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].to, b);
+  assert.match(f.sent[0].body, /You are playing white in a new game/);
+});
+
+test("Change players goes back to setup, keeps the old pair running, and the next Start starts two more", async () => {
+  const { f, m, play } = playedGame(SETUP);
+  await play();
+  const old = [m.players.w, m.players.b];
+  m.changePlayers();
+  assert.equal(m.phase, "idle");
+  assert.deepEqual(m.previous, old);
+  assert.equal(f.spawned.length, 2, "nothing started by going back");
+  f.bind({ onMessage() {} });
+  await m.start({ w: { type: "claude-code" }, b: { type: "claude-code" } });
+  assert.equal(f.spawned.length, 4);
+  assert.equal(m.phase, "playing");
+  assert.match(f.sent.at(-1).body, /You are playing white in a game of chess/);
+  assert.deepEqual(m.previous, old);
+});
+
+test("rematch and change-players do nothing while a game is running", async () => {
+  const f = fakeApp();
+  f.bind({ onMessage() {} });
+  const m = createMatch({ app: f.app });
+  await m.start("claude-code");
+  const before = f.spawned.length;
+  await m.rematch({ swap: true });
+  m.changePlayers();
+  assert.equal(m.phase, "playing");
+  assert.equal(f.spawned.length, before);
 });

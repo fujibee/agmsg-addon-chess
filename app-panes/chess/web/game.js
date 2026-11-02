@@ -61,10 +61,10 @@ export function newGame() {
 const SIDE = { w: "white", b: "black" };
 
 /** The text sent to the side to move. */
-export function turnPrompt(chess, { first = false, problem = "" } = {}) {
+export function turnPrompt(chess, { first = false, problem = "", again = false } = {}) {
   const side = SIDE[chess.turn()];
   const lines = [];
-  if (first) lines.push(`You are playing ${side} in a game of chess. A referee keeps the board and sends you the position each turn.`);
+  if (first) lines.push(`You are playing ${side} in ${again ? "a new game" : "a game"} of chess. A referee keeps the board and sends you the position each turn.${again ? " Forget the positions and moves of any earlier game." : ""}`);
   if (problem) lines.push(`Your last reply was not accepted: ${problem}. The position has not changed. Legal moves: ${legalUci(chess).join(" ")}.`);
   lines.push(`It is your move (${side}). Position (FEN): ${chess.fen()}`);
   lines.push(`Moves so far: ${moveList(chess) || "none"}`);

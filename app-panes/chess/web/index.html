@@ -9,13 +9,38 @@
 <body>
   <main>
     <section id="setup">
-      <label>Players run on <select id="type"></select></label>
-      <label>Model (optional) <input id="model" type="text" autocomplete="off" spellcheck="false"></label>
+      <div class="sides">
+        <fieldset class="side" id="side-w">
+          <legend>White</legend>
+          <label>CLI <select id="type-w"></select></label>
+          <label id="model-w-wrap">Model <input id="model-w" type="text" list="models-w" placeholder="CLI default" autocomplete="off" spellcheck="false"><datalist id="models-w"></datalist></label>
+        </fieldset>
+        <button id="swap" type="button" title="Swap the two sides" aria-label="Swap the two sides">&#8644;</button>
+        <fieldset class="side" id="side-b">
+          <legend>Black</legend>
+          <label>CLI <select id="type-b"></select></label>
+          <label id="model-b-wrap">Model <input id="model-b" type="text" list="models-b" placeholder="CLI default" autocomplete="off" spellcheck="false"><datalist id="models-b"></datalist></label>
+        </fieldset>
+      </div>
+      <p id="versus"></p>
       <button id="start" type="button" disabled>Start game</button>
     </section>
     <p id="status" role="status"></p>
     <p id="hint" role="status"></p>
-    <div id="board" role="img" aria-label="Chess board"></div>
+    <div id="stage">
+      <div class="who who-b" id="who-b"><span class="dot"></span><span class="name"></span><span class="turn"></span></div>
+      <div id="board" role="img" aria-label="Chess board"></div>
+      <div class="who who-w" id="who-w"><span class="dot"></span><span class="name"></span><span class="turn"></span></div>
+    </div>
+    <section id="after" hidden>
+      <p id="result"></p>
+      <div class="buttons">
+        <button id="rematch" type="button">Rematch</button>
+        <button id="swapcolours" type="button">Swap colours</button>
+        <button id="change" type="button">Change players</button>
+      </div>
+      <p id="still"></p>
+    </section>
     <p id="moves"></p>
     <ol id="log"></ol>
   </main>
