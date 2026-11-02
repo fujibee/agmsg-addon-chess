@@ -2,5 +2,12 @@
   "name": "agmsg-addon-chess",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test test/*.test.mjs" }
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "build": "esbuild src/board3d.src.js --bundle --minify --format=esm --legal-comments=none --outfile=app-panes/chess/web/board3d.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "three": "0.187.0"
+  }
 }

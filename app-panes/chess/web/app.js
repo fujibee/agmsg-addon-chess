@@ -1,6 +1,7 @@
 import { connect } from "./agmsg-addon.js";
 import { createMatch } from "./match.js";
 import { moveList } from "./game.js";
+import { createBoard3d, webglAvailable } from "./board3d.js";
 
 const PIECE = {
   wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
@@ -9,6 +10,7 @@ const PIECE = {
 const $ = (id) => document.getElementById(id);
 
 let match = null;
+let board3d = null;
 const app = connect({
   sample: false,
   onInit() {},
@@ -19,8 +21,14 @@ const app = connect({
 
 function render(m) {
   const board = $("board");
-  board.replaceChildren();
   const last = m.chess.history({ verbose: true }).at(-1);
+  if (board3d) board3d.setPosition(m.chess.board(), last);
+  else renderFlat(m, board, last);
+  renderText(m);
+}
+
+function renderFlat(m, board, last) {
+  board.replaceChildren();
   m.chess.board().forEach((row, r) =>
     row.forEach((cell, c) => {
       const sq = document.createElement("div");
@@ -30,6 +38,9 @@ function render(m) {
       board.append(sq);
     }),
   );
+}
+
+function renderText(m) {
   $("moves").textContent = moveList(m.chess);
   const turn = m.chess.turn() === "w" ? m.players.w || "white" : m.players.b || "black";
   $("status").textContent =
@@ -49,6 +60,14 @@ async function setup() {
   } catch (e) {
     $("status").textContent = `Cannot start: ${e.message}`;
     return;
+  }
+  if (webglAvailable()) {
+    try {
+      board3d = createBoard3d($("board"));
+      $("board").classList.add("is-3d");
+    } catch (e) {
+      board3d = null; // the flat board below takes over
+    }
   }
   match = createMatch({ app, onChange: render });
   $("start").addEventListener("click", () => void match.start($("type").value, $("model").value.trim() || undefined));

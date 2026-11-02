@@ -11,3 +11,6 @@ main { max-width: 520px; margin: 0 auto; padding: 12px; }
 .sq.last { outline: 2px solid #d9a400; outline-offset: -2px; }
 #moves { word-break: break-word; }
 #log { padding-left: 1.2em; color: GrayText; font-size: 12px; max-height: 9em; overflow: auto; }
+#board.is-3d { display: block; aspect-ratio: 4 / 3; border: 0; border-radius: 10px; overflow: hidden; background: #14161b; touch-action: none; cursor: grab; }
+#board.is-3d:active { cursor: grabbing; }
+main:has(#board.is-3d) { max-width: 820px; }
