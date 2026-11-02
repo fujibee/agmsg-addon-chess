@@ -144,20 +144,70 @@ export function createBoard3d(host) {
   const pieces = new Group();
   scene.add(pieces);
   let highlight = [];
+  let shown = new Map(); // square -> { group, color, type }
+  const tweens = []; // { group, from, to, t0, dur, kind }
+  const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
   function setPosition(board, last) {
-    pieces.clear();
+    const next = new Map();
     board.forEach((row, rIdx) => row.forEach((cell, cIdx) => {
-      if (!cell) return;
-      const name = files[cIdx] + (8 - rIdx);
-      const g = makePiece(cell.color, cell.type, mats);
-      const p = place(name); g.position.set(p.x, 0, p.z);
-      g.scale.setScalar(0.95);
-      pieces.add(g);
+      if (cell) next.set(files[cIdx] + (8 - rIdx), { color: cell.color, type: cell.type });
     }));
+    const now = performance.now();
+    const keep = new Map();
+    const gone = [];
+    for (const [sq, p] of shown) {
+      const n = next.get(sq);
+      if (n && n.color === p.color && n.type === p.type) keep.set(sq, p); else gone.push([sq, p]);
+    }
+    const fresh = [];
+    for (const [sq, n] of next) if (!keep.has(sq)) fresh.push([sq, n]);
+    // A piece that vanished from one square and appeared on another is the same piece: slide it. Pieces that
+    // vanish with no partner were taken (or promoted); pieces that appear with no partner are new (or promoted).
+    const result = new Map(keep);
+    for (const [sq, n] of fresh) {
+      const i = gone.findIndex(([, p]) => p.color === n.color && p.type === n.type);
+      if (i >= 0) {
+        const [from, p] = gone.splice(i, 1)[0];
+        const a = place(from), b = place(sq);
+        tweens.push({ group: p.group, from: a, to: b, t0: now, dur: p.type === "n" ? 620 : 480, kind: "move" });
+        result.set(sq, p);
+      } else {
+        const g = makePiece(n.color, n.type, mats);
+        g.scale.setScalar(0.95);
+        const b = place(sq); g.position.set(b.x, 0, b.z);
+        pieces.add(g);
+        if (shown.size) { g.scale.setScalar(0.01); tweens.push({ group: g, from: b, to: b, t0: now + 300, dur: 300, kind: "in" }); }
+        result.set(sq, { group: g, color: n.color, type: n.type });
+      }
+    }
+    for (const [, p] of gone) tweens.push({ group: p.group, from: p.group.position.clone(), to: p.group.position.clone(), t0: now + 250, dur: 320, kind: "out" });
+    shown = result;
     for (const s of squares) s.material.color.copy(s.userData.base);
     highlight = last ? [last.from, last.to] : [];
     for (const s of squares) if (highlight.includes(s.userData.sq)) s.material.color.lerp(new Color(0xe3b23c), 0.55);
+  }
+
+  function step(now) {
+    for (let i = tweens.length - 1; i >= 0; i--) {
+      const w = tweens[i];
+      const raw = (now - w.t0) / w.dur;
+      if (raw < 0) continue;
+      const t = Math.min(1, raw), e = ease(t);
+      if (w.kind === "move") {
+        w.group.position.set(w.from.x + (w.to.x - w.from.x) * e, Math.sin(Math.PI * e) * 0.9, w.from.z + (w.to.z - w.from.z) * e);
+      } else if (w.kind === "in") {
+        w.group.scale.setScalar(0.01 + 0.94 * e);
+      } else {
+        w.group.scale.setScalar(Math.max(0.01, 0.95 * (1 - e)));
+        w.group.position.y = -0.4 * e;
+        if (t >= 1) pieces.remove(w.group);
+      }
+      if (t >= 1) {
+        if (w.kind === "move") w.group.position.set(w.to.x, 0, w.to.z);
+        tweens.splice(i, 1);
+      }
+    }
   }
 
   // The view: a slow orbit that the user can take over by dragging; wheel zooms.
@@ -195,6 +245,7 @@ export function createBoard3d(host) {
     if (!running) return;
     raf = requestAnimationFrame(frame_);
     if (idle) yaw = Math.sin((performance.now() - t0) / 6000) * 0.28;
+    step(performance.now());
     aim();
     renderer.render(scene, camera);
   }
@@ -206,7 +257,7 @@ export function createBoard3d(host) {
 
   return {
     setPosition,
-    renderOnce() { aim(); renderer.render(scene, camera); },
+    renderOnce() { step(performance.now()); aim(); renderer.render(scene, camera); },
     setView(v) { yaw = v.yaw ?? yaw; pitch = v.pitch ?? pitch; dist = v.dist ?? dist; idle = false; },
     dispose() { running = false; cancelAnimationFrame(raf); renderer.dispose(); },
   };
