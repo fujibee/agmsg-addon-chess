@@ -216,3 +216,15 @@ test("a late reply written before the rematch began is not played as a move", as
   await m.onMessage({ id: "ok", from: m.players.w, to: "chess", body: "e2e4", created_at: now });
   assert.deepEqual(m.chess.history(), ["e4"]);
 });
+
+test("Start(a/b), Change players, Start(c/d) leaves four agents and the new pair really has types c/d", async () => {
+  const { f, m, play } = playedGame({ w: { type: "claude-code" }, b: { type: "codex" } });
+  await play();
+  m.changePlayers();
+  f.bind({ onMessage() {} });
+  await m.start({ w: { type: "gemini", model: "x" }, b: { type: "claude-code", model: "haiku" } });
+  assert.equal(f.spawned.length, 4);
+  assert.deepEqual(f.spawned.slice(2).map((s) => [s.type, s.name, s.model]), [["gemini", "white-2", "x"], ["claude-code", "black-2", "haiku"]]);
+  assert.deepEqual(m.sides, { w: { type: "gemini", model: "x" }, b: { type: "claude-code", model: "haiku" } });
+  assert.deepEqual(m.previous, ["white", "black"]);
+});
