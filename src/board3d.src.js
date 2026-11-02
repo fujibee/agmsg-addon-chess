@@ -1,50 +1,64 @@
 // The 3D board. Built into app-panes/chess/web/board3d.js (see package.json "build"); three.js is bundled, nothing is fetched.
 import {
-  ACESFilmicToneMapping, AmbientLight, BoxGeometry, CircleGeometry, CylinderGeometry, DirectionalLight, ExtrudeGeometry, Group,
+  ACESFilmicToneMapping, AmbientLight, BoxGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, ExtrudeGeometry, Group,
   HemisphereLight, LatheGeometry, Mesh, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, PlaneGeometry, Raycaster,
   Scene, Shape, SphereGeometry, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, Color, Fog,
 } from "three";
 
 const SQ = 1; // one square
+const SCALE = 0.95;
 
-// Silhouettes as [radius, height] pairs, turned around the vertical axis.
+// Silhouettes as [radius, height] pairs, turned around the vertical axis. The heights step up on purpose so the
+// pieces read from the camera's side view: pawn < knight < bishop < rook < queen < king.
 const PROFILE = {
-  p: [[0.36, 0], [0.36, 0.08], [0.2, 0.16], [0.14, 0.4], [0.2, 0.46], [0.12, 0.5], [0.16, 0.58], [0.19, 0.7], [0.14, 0.82], [0.0, 0.86]],
-  r: [[0.38, 0], [0.38, 0.1], [0.28, 0.18], [0.24, 0.62], [0.32, 0.68], [0.32, 0.9], [0.24, 0.9], [0.24, 0.84], [0.0, 0.84]],
-  b: [[0.38, 0], [0.38, 0.1], [0.24, 0.2], [0.14, 0.5], [0.24, 0.58], [0.16, 0.66], [0.2, 0.86], [0.12, 1.06], [0.06, 1.1], [0.1, 1.16], [0.0, 1.2]],
-  q: [[0.4, 0], [0.4, 0.1], [0.26, 0.2], [0.16, 0.6], [0.28, 0.72], [0.18, 0.76], [0.3, 1.02], [0.24, 1.04], [0.2, 1.0], [0.1, 1.08], [0.12, 1.2], [0.0, 1.22]],
-  k: [[0.4, 0], [0.4, 0.1], [0.26, 0.2], [0.16, 0.6], [0.28, 0.72], [0.18, 0.76], [0.28, 1.0], [0.16, 1.08], [0.0, 1.1]],
+  p: [[0.3, 0], [0.3, 0.07], [0.18, 0.14], [0.11, 0.34], [0.17, 0.38], [0.1, 0.42], [0.15, 0.5], [0.15, 0.6], [0.1, 0.7], [0.0, 0.72]],
+  r: [[0.42, 0], [0.42, 0.12], [0.34, 0.2], [0.3, 0.7], [0.4, 0.8], [0.4, 1.08], [0.3, 1.08], [0.3, 1.0], [0.0, 1.0]],
+  b: [[0.38, 0], [0.38, 0.1], [0.24, 0.2], [0.13, 0.55], [0.26, 0.64], [0.13, 0.72], [0.2, 0.9], [0.2, 1.0], [0.12, 1.18], [0.05, 1.24], [0.08, 1.28], [0.0, 1.32]],
+  q: [[0.44, 0], [0.44, 0.12], [0.3, 0.24], [0.15, 0.7], [0.3, 0.84], [0.17, 0.9], [0.26, 1.1], [0.36, 1.36], [0.28, 1.38], [0.0, 1.34]],
+  k: [[0.46, 0], [0.46, 0.12], [0.32, 0.24], [0.17, 0.74], [0.32, 0.9], [0.18, 0.96], [0.3, 1.2], [0.34, 1.5], [0.2, 1.54], [0.0, 1.5]],
 };
 
 function lathe(kind) {
   const pts = PROFILE[kind].map(([r, y]) => new Vector2(r, y));
-  return new LatheGeometry(pts, 40);
+  return new LatheGeometry(pts, 48);
 }
 
 function knightGeometry() {
-  // A side profile pulled out into a body, on a round base.
+  // A horse's head and neck in profile (snout to the right), pulled out with a bevel.
   const s = new Shape();
-  s.moveTo(-0.22, 0.1); s.lineTo(-0.2, 0.42); s.quadraticCurveTo(-0.26, 0.62, -0.08, 0.86);
-  s.lineTo(-0.1, 1.0); s.lineTo(0.0, 0.94); s.lineTo(0.06, 1.02); s.lineTo(0.14, 0.9);
-  s.quadraticCurveTo(0.34, 0.76, 0.36, 0.6); s.lineTo(0.2, 0.52); s.quadraticCurveTo(0.08, 0.6, 0.0, 0.5);
-  s.quadraticCurveTo(0.12, 0.3, 0.22, 0.1); s.lineTo(-0.22, 0.1);
-  const g = new ExtrudeGeometry(s, { depth: 0.34, bevelEnabled: true, bevelSize: 0.04, bevelThickness: 0.05, bevelSegments: 3, curveSegments: 12 });
-  g.translate(0, 0, -0.17);
+  s.moveTo(-0.3, 0.1);
+  s.quadraticCurveTo(-0.38, 0.4, -0.26, 0.72); // back of the neck, up the mane
+  s.lineTo(-0.2, 1.0);
+  s.lineTo(-0.1, 1.18); // ear
+  s.lineTo(-0.02, 1.02);
+  s.lineTo(0.06, 1.2); // second ear
+  s.lineTo(0.14, 0.98);
+  s.quadraticCurveTo(0.3, 0.9, 0.42, 0.7); // forehead down the bridge of the nose
+  s.quadraticCurveTo(0.48, 0.58, 0.4, 0.52); // nose
+  s.lineTo(0.22, 0.52); // mouth
+  s.quadraticCurveTo(0.12, 0.56, 0.08, 0.5); // jaw
+  s.quadraticCurveTo(0.2, 0.34, 0.32, 0.1); // throat and chest
+  s.lineTo(-0.3, 0.1);
+  const g = new ExtrudeGeometry(s, { depth: 0.3, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.06, bevelSegments: 4, curveSegments: 16 });
+  g.translate(0, 0, -0.15);
   return g;
 }
 
 function crossOn(group, y, mat) {
-  const a = new Mesh(new BoxGeometry(0.06, 0.22, 0.06), mat); a.position.y = y + 0.1;
-  const b = new Mesh(new BoxGeometry(0.2, 0.06, 0.06), mat); b.position.y = y + 0.12;
+  const a = new Mesh(new BoxGeometry(0.1, 0.4, 0.1), mat); a.position.y = y + 0.2;
+  const b = new Mesh(new BoxGeometry(0.3, 0.1, 0.1), mat); b.position.y = y + 0.26;
   for (const m of [a, b]) { m.castShadow = true; group.add(m); }
 }
 
-function crownOn(group, y, mat) {
-  for (let i = 0; i < 6; i++) {
-    const t = (i / 6) * Math.PI * 2;
-    const m = new Mesh(new SphereGeometry(0.045, 12, 8), mat);
-    m.position.set(Math.cos(t) * 0.17, y, Math.sin(t) * 0.17); m.castShadow = true; group.add(m);
+function coronetOn(group, y, mat) {
+  for (let i = 0; i < 8; i++) {
+    const t = (i / 8) * Math.PI * 2;
+    const tooth = new Mesh(new ConeGeometry(0.06, 0.2, 10), mat);
+    tooth.position.set(Math.cos(t) * 0.29, y + 0.08, Math.sin(t) * 0.29);
+    tooth.castShadow = true; group.add(tooth);
   }
+  const ball = new Mesh(new SphereGeometry(0.1, 20, 14), mat);
+  ball.position.y = y + 0.2; ball.castShadow = true; group.add(ball);
 }
 
 function makePiece(color, kind, mats) {
@@ -53,8 +67,8 @@ function makePiece(color, kind, mats) {
   let body;
   if (kind === "n") {
     body = new Group();
-    const base = new Mesh(new CylinderGeometry(0.38, 0.4, 0.12, 40), mat);
-    base.position.y = 0.06;
+    const base = new Mesh(new CylinderGeometry(0.34, 0.4, 0.14, 40), mat);
+    base.position.y = 0.07;
     const horse = new Mesh(knightGeometry(), mat);
     if (color === "b") horse.rotation.y = Math.PI; // seen from the side; black faces the other way
     body.add(base, horse);
@@ -64,13 +78,19 @@ function makePiece(color, kind, mats) {
     body.castShadow = true; body.receiveShadow = true;
   }
   g.add(body);
-  if (kind === "k") crossOn(g, 1.1, mat);
-  if (kind === "q") crownOn(g, 1.22, mat);
+  if (kind === "k") crossOn(g, 1.5, mat);
+  if (kind === "q") coronetOn(g, 1.36, mat);
+  if (kind === "b") {
+    // The mitre's slit: a thin dark notch cut across the head.
+    const slit = new Mesh(new BoxGeometry(0.34, 0.035, 0.34), mats.slit);
+    slit.position.y = 1.12; slit.rotation.z = -0.5;
+    g.add(slit);
+  }
   if (kind === "r") {
     for (let i = 0; i < 4; i++) {
       const t = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      const m = new Mesh(new BoxGeometry(0.12, 0.14, 0.12), mat);
-      m.position.set(Math.cos(t) * 0.2, 0.96, Math.sin(t) * 0.2); m.castShadow = true; g.add(m);
+      const m = new Mesh(new BoxGeometry(0.2, 0.2, 0.2), mat);
+      m.position.set(Math.cos(t) * 0.3, 1.12, Math.sin(t) * 0.3); m.rotation.y = -t; m.castShadow = true; g.add(m);
     }
   }
   return g;
@@ -140,6 +160,7 @@ export function createBoard3d(host) {
   const mats = {
     w: new MeshStandardMaterial({ color: 0xf1ead8, roughness: 0.32, metalness: 0.05 }),
     b: new MeshStandardMaterial({ color: 0x25272e, roughness: 0.3, metalness: 0.2 }),
+    slit: new MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.6 }),
   };
   const pieces = new Group();
   scene.add(pieces);
@@ -174,7 +195,7 @@ export function createBoard3d(host) {
         result.set(sq, p);
       } else {
         const g = makePiece(n.color, n.type, mats);
-        g.scale.setScalar(0.95);
+        g.scale.setScalar(SCALE);
         const b = place(sq); g.position.set(b.x, 0, b.z);
         pieces.add(g);
         if (shown.size) { g.scale.setScalar(0.01); tweens.push({ group: g, from: b, to: b, t0: now + 300, dur: 300, kind: "in" }); }
@@ -197,9 +218,9 @@ export function createBoard3d(host) {
       if (w.kind === "move") {
         w.group.position.set(w.from.x + (w.to.x - w.from.x) * e, Math.sin(Math.PI * e) * 0.9, w.from.z + (w.to.z - w.from.z) * e);
       } else if (w.kind === "in") {
-        w.group.scale.setScalar(0.01 + 0.94 * e);
+        w.group.scale.setScalar(0.01 + (SCALE - 0.01) * e);
       } else {
-        w.group.scale.setScalar(Math.max(0.01, 0.95 * (1 - e)));
+        w.group.scale.setScalar(Math.max(0.01, SCALE * (1 - e)));
         w.group.position.y = -0.4 * e;
         if (t >= 1) pieces.remove(w.group);
       }
