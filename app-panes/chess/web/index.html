@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <section id="setup">
+      <label>Players run on <select id="type"></select></label>
+      <label>Model (optional) <input id="model" type="text" autocomplete="off" spellcheck="false"></label>
+      <button id="start" type="button" disabled>Start game</button>
+    </section>
+    <p id="status" role="status"></p>
+    <div id="board" role="img" aria-label="Chess board"></div>
+    <p id="moves"></p>
+    <ol id="log"></ol>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
