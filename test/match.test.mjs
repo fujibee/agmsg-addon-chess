@@ -268,3 +268,25 @@ test("sends go one after another and say which one is in flight", async () => {
   await started;
   assert.equal(m.sending, null);
 });
+
+test("a second send waits for the first: the reply to a slow send is played at once, the next ask starts after it", async () => {
+  const f = fakeApp();
+  const events = [];
+  const pending = [];
+  f.app.messages.send = (to) => { events.push(`start ${to}`); return new Promise((r) => pending.push(() => { events.push(`end ${to}`); r({ to }); })); };
+  const m = createMatch({ app: f.app });
+  const started = m.start("claude-code");
+  await new Promise((r) => setTimeout(r, 5));
+  const replied = m.onMessage({ id: "m1", from: "white", to: "chess", body: "e2e4" }); // finishes after black's send
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(m.chess.history(), ["e4"], "the board moved while the first send was still in flight");
+  assert.deepEqual(events, ["start white"], "black's prompt has not started");
+  pending[0]();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(events, ["start white", "end white", "start black"]);
+  assert.equal(m.sending.to, "black");
+  pending[1]();
+  await Promise.all([started, replied]);
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(m.sending, null);
+});
