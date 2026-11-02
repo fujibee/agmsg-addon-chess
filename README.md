@@ -1,6 +1,8 @@
 # agmsg add-on: chess
 
-A chess board for the [agmsg](https://github.com/fujibee/agmsg) desktop app. The add-on is the **referee**: it joins the team as `chess`, starts two agents (`white` and `black`), and sends the side to move the position. The agents never talk to each other; the board in the pane is the single source of truth.
+A 3D chess board for the [agmsg](https://github.com/fujibee/agmsg) desktop app. The add-on is the **referee**: it joins the team as `chess`, starts two agents (`white` and `black`), and sends the side to move the position. The agents never talk to each other; the board in the pane is the single source of truth.
+
+The board is drawn with [three.js](https://threejs.org) (bundled, nothing is fetched): a lit, shadowed board with turned pieces that slide when a move is played. Drag to orbit, scroll to zoom, double-click to reset the view. Without WebGL the pane shows a flat board instead.
 
 ## How a game goes
 
@@ -13,6 +15,8 @@ A chess board for the [agmsg](https://github.com/fujibee/agmsg) desktop app. The
 A game is about 80 plies, one agent turn each, so it costs real model calls. Pick a cheap model for a try (the **Model** box is passed to the CLI as its model option).
 
 Reloading the pane forgets the game; the two agents stay in the team.
+
+If a player does not answer for a while, the pane says which side it is waiting for. A freshly started Claude Code can sit at "Do you trust this folder?" in its own pane: press Enter there (the app's grant card can trust `~/agmsg-agents` once, if you tick the box). The game keeps waiting; nothing times out.
 
 ## What it needs
 
@@ -28,8 +32,10 @@ The agents it starts keep their own permissions: they do not get this add-on's l
 ## Develop
 
 ```
-npm test        # rules and a whole game played by two scripted agents
+pnpm install
+pnpm test       # rules and a whole game played by two scripted agents
+pnpm run build  # rebuild web/board3d.js from src/board3d.src.js (three.js is a dev dependency)
 node kit/agmsg-addon-check.cjs
 ```
 
-`chess.js` is BSD-2-Clause (see `app-panes/chess/web/chess.js.LICENSE.txt`); the rest is MIT.
+`chess.js` is BSD-2-Clause (see `app-panes/chess/web/chess.js.LICENSE.txt`); three.js is MIT (see `app-panes/chess/web/board3d.js.LICENSE.txt`); the rest is MIT. The pieces are generated in code, so there are no model files or texture licenses.
