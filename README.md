@@ -7,14 +7,14 @@ The board is drawn with [three.js](https://threejs.org) (bundled, nothing is fet
 ## How a game goes
 
 1. Open **Chess** from the **+** at the top of the panes (**Add-on pane**). Allow the team access and the team powers it asks for.
-2. Choose the CLI the two players run on and press **Start game**.
+2. Pick the CLI and model for White and for Black (⇄ swaps them) and press **Start game**. Nothing is started before that. Your choice is remembered.
 3. To the side to move the referee sends the position as FEN, the moves so far, and "reply with one move in UCI, nothing else".
 4. A reply is checked with [chess.js](https://github.com/jhlywa/chess.js) (bundled in `web/`). A legal move is played and the other side is asked. An illegal or unreadable reply is explained and the same side is asked again, with the legal moves listed.
 5. At checkmate, stalemate, threefold repetition, the fifty-move rule or bare kings, the pane shows the result. The agents keep running as normal terminal panes; close them when you are done.
 
-A game is about 80 plies, one agent turn each, so it costs real model calls. Pick a cheap model for a try (the **Model** box is passed to the CLI as its model option).
+A game is about 80 plies, one agent turn each, so it costs real model calls. Pick a cheap model for a try (the **Model** box is passed to the CLI as its model option and is hidden for a CLI that takes none).
 
-Reloading the pane forgets the game; the two agents stay in the team.
+After a game, **Rematch** and **Swap colours** reuse the two running agents; **Change players** goes back to the setup and the next Start starts two new agents (the earlier pair keeps running; close its panes if you don't need it). Reloading the pane forgets the game; the agents stay in the team.
 
 If a player does not answer for a while, the pane says which side it is waiting for. A freshly started Claude Code can sit at "Do you trust this folder?" in its own pane: press Enter there (the app's grant card can trust `~/agmsg-agents` once, if you tick the box). The game keeps waiting; nothing times out.
 
