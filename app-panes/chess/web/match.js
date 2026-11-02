@@ -50,6 +50,8 @@ export function createMatch({ app, onChange = () => {} }) {
     spawned: 0, // how many agents this pane has started (the page never starts any before Start)
     previous: [], // agents of an earlier pair that are still running after "Change players"
     again: false, // the next prompts open a new game for agents that already played one
+    run: 1, // which pair this is: the host hands back the same agent for the same requested name
+    gameStart: 0, // when this game began, ms since epoch; replies written before it are not moves
   };
   const seen = new Set();
   const introduced = new Set();
@@ -79,7 +81,10 @@ export function createMatch({ app, onChange = () => {} }) {
     onChange(m);
     try {
       m.me = (await app.team.join()).name;
-      for (const [side, want] of [["w", "white"], ["b", "black"]]) {
+      // Asking the host again for the same name returns the agent it already made (and only resumes a joined one), so
+      // every new pair asks for its own names.
+      for (const [side, base] of [["w", "white"], ["b", "black"]]) {
+        const want = m.run === 1 ? base : `${base}-${m.run}`;
         const { type, model: wanted } = sides[side];
         const entry = await app.agents.spawn(type, want, wanted ? { model: wanted } : {});
         m.spawned++;
@@ -91,6 +96,7 @@ export function createMatch({ app, onChange = () => {} }) {
         say(`${entry.name} (${side === "w" ? "white" : "black"}) is ${entry.state}`);
       }
       m.phase = "playing";
+      m.gameStart = Date.now();
       onChange(m);
       await ask();
     } catch (e) {
@@ -117,6 +123,7 @@ export function createMatch({ app, onChange = () => {} }) {
       m.sides = { w: m.sides.b, b: m.sides.w };
     }
     m.phase = "playing";
+    m.gameStart = Date.now();
     onChange(m);
     try {
       await ask();
@@ -130,6 +137,7 @@ export function createMatch({ app, onChange = () => {} }) {
     if (m.phase !== "over" && m.phase !== "error") return;
     m.previous = [...m.previous, m.players.w, m.players.b].filter(Boolean);
     m.error = "";
+    m.run++;
     m.players = { w: "", b: "" };
     m.labels = { w: "", b: "" };
     m.sides = { w: null, b: null };
@@ -143,6 +151,13 @@ export function createMatch({ app, onChange = () => {} }) {
     if (m.phase !== "playing" || seen.has(msg.id)) return;
     if (msg.to !== m.me || msg.from !== m.players[m.chess.turn()]) return;
     seen.add(msg.id);
+    // A late reply to an earlier game (written before this one began) is not a move in it. Timestamps are whole
+    // seconds, so the start is rounded down to one.
+    const wrote = Date.parse(msg.created_at ?? "");
+    if (Number.isFinite(wrote) && wrote < Math.floor(m.gameStart / 1000) * 1000) {
+      say(`${msg.from}: ignored a reply written before this game began`);
+      return;
+    }
     try {
       const read = readUci(msg.body);
       if (read.error) {

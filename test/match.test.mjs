@@ -10,14 +10,19 @@ function fakeApp({ spoil = () => null } = {}) {
   const rnd = (n) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n);
   const sent = [];
   const spawned = [];
+  const spawn = {};
   let id = 0;
   let match;
   const app = {
     team: { join: async () => ({ name: "chess", type: "app-addon", created: true }) },
     agents: {
+      // The host's contract: the same requested name gives back the agent it already made; a new name makes one
+      // (a taken name becomes name-2, ...).
       spawn: async (type, name, opts = {}) => {
         spawned.push({ type, name, ...opts });
-        return { name: `${name}${spawned.length > 2 ? "-" + spawned.length : ""}`, type, state: "running", pid: 10 };
+        const made = (spawn.byName ??= new Map());
+        if (!made.has(name)) made.set(name, { name, type, state: "running", pid: 10 });
+        return made.get(name);
       },
     },
     messages: {
@@ -184,4 +189,30 @@ test("rematch and change-players do nothing while a game is running", async () =
   m.changePlayers();
   assert.equal(m.phase, "playing");
   assert.equal(f.spawned.length, before);
+});
+
+test("every new pair asks for its own names, so the host makes new agents instead of returning the old ones", async () => {
+  const { f, m, play } = playedGame(SETUP);
+  await play();
+  assert.deepEqual(f.spawned.map((s) => s.name), ["white", "black"]);
+  m.changePlayers();
+  f.bind({ onMessage() {} });
+  await m.start({ w: { type: "claude-code" }, b: { type: "claude-code" } });
+  assert.deepEqual(f.spawned.map((s) => s.name), ["white", "black", "white-2", "black-2"]);
+  assert.notEqual(m.players.w, m.previous[0]);
+  assert.notEqual(m.players.b, m.previous[1]);
+});
+
+test("a late reply written before the rematch began is not played as a move", async () => {
+  const { f, m, play } = playedGame(SETUP);
+  await play();
+  f.bind({ onMessage() {} });
+  await m.rematch();
+  const early = new Date(Math.floor(m.gameStart / 1000) * 1000 - 5000).toISOString();
+  await m.onMessage({ id: "late", from: m.players.w, to: "chess", body: "e2e4", created_at: early });
+  assert.equal(m.chess.history().length, 0);
+  assert.match(m.log.at(-1), /ignored a reply written before this game began/);
+  const now = new Date(m.gameStart + 1000).toISOString();
+  await m.onMessage({ id: "ok", from: m.players.w, to: "chess", body: "e2e4", created_at: now });
+  assert.deepEqual(m.chess.history(), ["e4"]);
 });
