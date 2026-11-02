@@ -1,5 +1,5 @@
 import { connect } from "./agmsg-addon.js";
-import { createMatch } from "./match.js";
+import { createMatch, waitingHint } from "./match.js";
 import { moveList } from "./game.js";
 import { createBoard3d, webglAvailable } from "./board3d.js";
 
@@ -49,9 +49,16 @@ function renderText(m) {
     : m.phase === "over" ? m.result
     : m.phase === "error" ? `Stopped: ${m.error}`
     : "Choose a CLI and start.";
+  showHint();
   $("log").replaceChildren(...m.log.slice(-30).map((t) => Object.assign(document.createElement("li"), { textContent: t })));
   $("start").disabled = m.phase !== "idle" || !$("type").value;
 }
+
+// The hint depends on the clock, not only on a state change: look again every few seconds while a game runs.
+function showHint() {
+  $("hint").textContent = match ? waitingHint(match) : "";
+}
+setInterval(showHint, 5000);
 
 async function setup() {
   try {

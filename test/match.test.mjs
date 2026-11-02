@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMatch } from "../app-panes/chess/web/match.js";
-import { legalUci } from "../app-panes/chess/web/game.js";
+import { legalUci, newGame } from "../app-panes/chess/web/game.js";
 import { Chess } from "../app-panes/chess/web/chess.js";
 
 // Two fake agents that read the FEN in each prompt and answer with a legal move (seeded), sometimes badly first.
@@ -72,4 +72,14 @@ test("a player that cannot start stops the game with its reason", async () => {
   await m.start("nope");
   assert.equal(m.phase, "error");
   assert.match(m.error, /white could not start: no such CLI/);
+});
+
+test("waitingHint stays quiet at first, then asks to look at the pane, and never stops the game", async () => {
+  const { waitingHint } = await import("../app-panes/chess/web/match.js");
+  const m = { phase: "playing", chess: newGame(), askedAt: 1000 };
+  assert.equal(waitingHint(m, 1000 + 10_000), "");
+  assert.match(waitingHint(m, 1000 + 60_000), /^White hasn't answered yet/);
+  assert.match(waitingHint(m, 1000 + 60_000), /Do you trust this folder/);
+  assert.equal(waitingHint({ ...m, phase: "over" }, 1000 + 60_000), "");
+  assert.equal(m.phase, "playing");
 });

@@ -2,6 +2,16 @@
 // `app` is the agmsg add-on connection; everything else here is plain data, so a test can play a whole game.
 import { newGame, outcome, readUci, resultText, tryMove, turnPrompt } from "./game.js";
 
+/**
+ * A hint, never a stop: the side to move has not answered for a while. A freshly started Claude Code can sit at
+ * "Do you trust this folder?" in its own pane, where only a keypress there helps. The game keeps waiting.
+ */
+export function waitingHint(m, now = Date.now(), afterMs = 45000) {
+  if (m.phase !== "playing" || !m.askedAt || now - m.askedAt < afterMs) return "";
+  const side = m.chess.turn() === "w" ? "White" : "Black";
+  return `${side} hasn't answered yet \u2014 if its pane asks "Do you trust this folder?", press Enter there.`;
+}
+
 export function createMatch({ app, onChange = () => {} }) {
   const m = {
     phase: "idle", // idle | starting | playing | over | error
@@ -12,6 +22,7 @@ export function createMatch({ app, onChange = () => {} }) {
     problems: 0,
     result: "",
     error: "",
+    askedAt: 0, // when the side to move was last asked, ms since epoch
   };
   const seen = new Set();
   const introduced = new Set();
@@ -29,6 +40,7 @@ export function createMatch({ app, onChange = () => {} }) {
     const side = m.chess.turn();
     const first = !introduced.has(side);
     introduced.add(side);
+    m.askedAt = Date.now();
     await app.messages.send(m.players[side], turnPrompt(m.chess, { first, problem }));
   }
 

@@ -14,3 +14,4 @@ main { max-width: 520px; margin: 0 auto; padding: 12px; }
 #board.is-3d { display: block; aspect-ratio: 4 / 3; border: 0; border-radius: 10px; overflow: hidden; background: #14161b; touch-action: none; cursor: grab; }
 #board.is-3d:active { cursor: grabbing; }
 main:has(#board.is-3d) { max-width: 820px; }
+#hint { min-height: 1.2em; color: #a56a00; font-size: 13px; margin: 0 0 6px; }
