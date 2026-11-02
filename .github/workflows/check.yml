@@ -12,3 +12,5 @@ jobs:
           node-version: 22
       - name: Check the add-on the way the app checks an install
         run: node kit/agmsg-addon-check.cjs
+      - name: Rules and a whole game with two scripted agents
+        run: node --test test/*.test.mjs
