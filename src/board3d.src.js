@@ -1,8 +1,9 @@
 // The 3D board. Built into app-panes/chess/web/board3d.js (see package.json "build"); three.js is bundled, nothing is fetched.
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   ACESFilmicToneMapping, AmbientLight, BoxGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, ExtrudeGeometry, Group,
   HemisphereLight, LatheGeometry, Mesh, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, PlaneGeometry, Raycaster,
-  Scene, Shape, SphereGeometry, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, Color, Fog,
+  Scene, Shape, SphereGeometry, SplineCurve, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, Color, Fog,
 } from "three";
 
 const SQ = 1; // one square
@@ -24,23 +25,34 @@ function lathe(kind) {
 }
 
 function knightGeometry() {
-  // A horse's head and neck in profile (snout to the right), pulled out with a bevel.
-  const s = new Shape();
-  s.moveTo(-0.3, 0.1);
-  s.quadraticCurveTo(-0.38, 0.4, -0.26, 0.72); // back of the neck, up the mane
-  s.lineTo(-0.2, 1.0);
-  s.lineTo(-0.1, 1.18); // ear
-  s.lineTo(-0.02, 1.02);
-  s.lineTo(0.06, 1.2); // second ear
-  s.lineTo(0.14, 0.98);
-  s.quadraticCurveTo(0.3, 0.9, 0.42, 0.7); // forehead down the bridge of the nose
-  s.quadraticCurveTo(0.48, 0.58, 0.4, 0.52); // nose
-  s.lineTo(0.22, 0.52); // mouth
-  s.quadraticCurveTo(0.12, 0.56, 0.08, 0.5); // jaw
-  s.quadraticCurveTo(0.2, 0.34, 0.32, 0.1); // throat and chest
-  s.lineTo(-0.3, 0.1);
-  const g = new ExtrudeGeometry(s, { depth: 0.3, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.06, bevelSegments: 4, curveSegments: 16 });
-  g.translate(0, 0, -0.15);
+  // A horse's head and neck in profile (snout to the right): an arched neck with a mane ridge down the back, a
+  // brow, a straight bridge to a rounded muzzle, a jaw notch and two ears. Many points on one smooth closed spline,
+  // pulled out with a generous bevel, then tapered so the muzzle is narrower than the neck, and smooth-shaded.
+  const pts = [
+    [-0.27, 0.0], [-0.34, 0.18], [-0.37, 0.36], [-0.34, 0.54], [-0.29, 0.7], [-0.22, 0.84], [-0.17, 0.95], // back of the neck, mane
+    [-0.13, 1.03], [-0.09, 1.24], [-0.04, 1.04], // first ear
+    [-0.01, 1.03], [0.03, 1.24], [0.08, 1.0], // second ear
+    [0.14, 0.94], [0.24, 0.83], [0.34, 0.7], [0.42, 0.59], // brow and a long bridge of the nose
+    [0.465, 0.51], [0.45, 0.44], [0.39, 0.4], // rounded muzzle
+    [0.28, 0.4], [0.19, 0.44], [0.12, 0.5], [0.09, 0.45], // lip, chin groove, jaw
+    [0.11, 0.33], [0.2, 0.17], [0.26, 0.0], // throat and chest
+  ].map(([x, y]) => new Vector2(x, y));
+  const spline = new SplineCurve(pts.concat([pts[0]]));
+  const outline = spline.getPoints(220);
+  const shape = new Shape(outline);
+  let g = new ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.09, bevelSegments: 8, curveSegments: 1, steps: 1 });
+  g.deleteAttribute("normal");
+  g.deleteAttribute("uv");
+  g = mergeVertices(g, 1e-4);
+  const pos = g.attributes.position;
+  const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    pos.setZ(i, pos.getZ(i) * (1 - 0.5 * smooth(0.05, 0.42, x)) * (1 - 0.55 * smooth(1.02, 1.22, y)));
+  }
+  g.computeVertexNormals();
+  g.translate(0, 0.3, -0.07);
   return g;
 }
 
@@ -67,10 +79,11 @@ function makePiece(color, kind, mats) {
   let body;
   if (kind === "n") {
     body = new Group();
-    const base = new Mesh(new CylinderGeometry(0.34, 0.4, 0.14, 40), mat);
-    base.position.y = 0.07;
+    const base = new Mesh(new LatheGeometry([[0.4, 0], [0.4, 0.12], [0.3, 0.2], [0.2, 0.28], [0.27, 0.32], [0.27, 0.38], [0.0, 0.4]].map(([r, y]) => new Vector2(r, y)), 48), mat);
     const horse = new Mesh(knightGeometry(), mat);
     if (color === "b") horse.rotation.y = Math.PI; // seen from the side; black faces the other way
+    const eye = new Mesh(new SphereGeometry(0.035, 12, 8), mats.slit);
+    for (const z of [-0.13, 0.13]) { const e = eye.clone(); e.position.set(0.19, 1.1, z); horse.add(e); }
     body.add(base, horse);
     body.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
   } else {
