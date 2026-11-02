@@ -83,3 +83,32 @@ test("waitingHint stays quiet at first, then asks to look at the pane, and never
   assert.equal(waitingHint({ ...m, phase: "over" }, 1000 + 60_000), "");
   assert.equal(m.phase, "playing");
 });
+
+const guidance = {
+  orphaned: /still running from before the app restarted \(process 4242\).*Settings > Add-ons/,
+  unknown: /was starting when the app stopped \(it was opening\).*Settings > Add-ons/,
+  joined: /is joined but has no running agent.*Settings > Add-ons/,
+  claimed: /is claimed but has no running agent/,
+};
+for (const state of Object.keys(guidance)) {
+  test(`a player that comes back ${state} stops the start with guidance and sends no prompt`, async () => {
+    const f = fakeApp();
+    f.app.agents.spawn = async (type, name) => ({ name, type, state, pid: 4242, reason: "it was opening" });
+    const m = createMatch({ app: f.app });
+    await m.start("claude-code");
+    assert.equal(m.phase, "error");
+    assert.match(m.error, guidance[state]);
+    assert.equal(f.sent.length, 0);
+    assert.equal(m.chess.history().length, 0);
+  });
+}
+
+test("an opening player lets the game go on: the app finishes opening it", async () => {
+  const f = fakeApp();
+  f.app.agents.spawn = async (type, name) => ({ name, type, state: "opening" });
+  f.bind({ onMessage() {} }); // no reply: only the first prompt matters here
+  const m = createMatch({ app: f.app });
+  await m.start("claude-code");
+  assert.equal(m.phase, "playing");
+  assert.equal(f.sent.length, 1);
+});

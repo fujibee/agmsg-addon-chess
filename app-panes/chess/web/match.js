@@ -12,6 +12,28 @@ export function waitingHint(m, now = Date.now(), afterMs = 45000) {
   return `${side} hasn't answered yet \u2014 if its pane asks "Do you trust this folder?", press Enter there.`;
 }
 
+/**
+ * What to tell the person when a player did not come up as a running agent, or "" when the game can go on.
+ * Only running (and opening, which the app finishes by itself) can read the position; the others need a person:
+ * orphaned and unknown are never reopened by the app until the person chooses, in Settings > Add-ons.
+ */
+export function spawnProblem(entry, want) {
+  const why = entry.reason ? ` (${entry.reason})` : "";
+  switch (entry.state) {
+    case "running":
+    case "opening":
+      return "";
+    case "failed":
+      return `${want} could not start: ${entry.reason ?? "unknown reason"}`;
+    case "orphaned":
+      return `${want} (${entry.name}) is still running from before the app restarted${entry.pid ? ` (process ${entry.pid})` : ""}, but this pane is not connected to it. Open Settings > Add-ons and choose "Open new" or "Leave it", then start again.`;
+    case "unknown":
+      return `${want} (${entry.name}) was starting when the app stopped${why}, and the app does not reopen it by itself. Open Settings > Add-ons and choose "Open new" or "Leave it", then start again.`;
+    default:
+      return `${want} (${entry.name}) is ${entry.state} but has no running agent${why}. Open Settings > Add-ons and choose "Open", then start again.`;
+  }
+}
+
 export function createMatch({ app, onChange = () => {} }) {
   const m = {
     phase: "idle", // idle | starting | playing | over | error
@@ -52,7 +74,8 @@ export function createMatch({ app, onChange = () => {} }) {
       m.me = (await app.team.join()).name;
       for (const [side, want] of [["w", "white"], ["b", "black"]]) {
         const entry = await app.agents.spawn(type, want, model ? { model } : {});
-        if (entry.state === "failed") throw new Error(`${want} could not start: ${entry.reason ?? "unknown reason"}`);
+        const problem = spawnProblem(entry, want);
+        if (problem) throw new Error(problem);
         m.players[side] = entry.name;
         say(`${entry.name} (${side === "w" ? "white" : "black"}) is ${entry.state}`);
       }
