@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { legalUci, moveList, newGame, outcome, readUci, resultText, tryMove, turnPrompt } from "../app-panes/chess/web/game.js";
+import { legalUci, limitText, moveList, newGame, outcome, readUci, resultText, tryMove, turnPrompt } from "../app-panes/chess/web/game.js";
 
 test("readUci takes a bare move, a decorated one, and refuses the rest", () => {
   assert.deepEqual(readUci("e2e4"), { uci: "e2e4" });
@@ -57,4 +57,12 @@ test("the prompt carries the FEN, the move list and the reply format", () => {
   assert.match(p, /Send your move back to chess /);
   assert.match(turnPrompt(g, { referee: "ref-1" }), /back to ref-1 as an agmsg message.*ref-1 only reads/s);
   assert.equal(moveList(newGame()), "");
+});
+
+test("the prompt states the time limit only when there is one, and says a retry keeps the clock", () => {
+  const g = newGame();
+  assert.doesNotMatch(turnPrompt(g), /Time limit/);
+  assert.match(turnPrompt(g, { limit: 120 }), /Time limit: reply within 2 minutes of receiving this message\. If it runs out you lose the game\./);
+  assert.match(turnPrompt(g, { limit: 30, problem: "e7e8 is not legal" }), /within 30 seconds .*clock for this move keeps running/);
+  assert.deepEqual([30, 60, 120, 300].map(limitText), ["30 seconds", "1 minute", "2 minutes", "5 minutes"]);
 });

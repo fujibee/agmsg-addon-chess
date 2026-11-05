@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { acceptsModel, defaultSetup, edgeLabel, load, mergeSaved, save, sideLabel, swapSides } from "../app-panes/chess/web/setup.js";
+import { DEFAULT_LIMIT, LIMITS, acceptsModel, defaultSetup, edgeLabel, load, loadLimit, mergeSaved, save, saveLimit, sideLabel, swapSides } from "../app-panes/chess/web/setup.js";
 
 const TYPES = [
   { type: "claude-code", models: true },
@@ -52,4 +52,20 @@ test("the edge label names the model, or says CLI default for a CLI that takes o
   assert.equal(edgeLabel({ type: "claude-code", model: "" }, TYPES), "claude-code \u00b7 CLI default");
   assert.equal(edgeLabel({ type: "gemini", model: "" }, TYPES), "gemini");
   assert.equal(edgeLabel(null, TYPES), "");
+});
+
+test("the time per move defaults to 2 minutes, is remembered, and junk or blocked storage falls back", () => {
+  assert.equal(DEFAULT_LIMIT, 120);
+  assert.deepEqual(LIMITS.map((l) => l.value), [30, 60, 120, 300, 0]);
+  const st = memory();
+  assert.equal(loadLimit(st), 120);
+  saveLimit(st, 0);
+  assert.equal(loadLimit(st), 0, "No limit is a choice, not a missing value");
+  saveLimit(st, 60);
+  assert.equal(loadLimit(st), 60);
+  assert.equal(loadLimit(memory({ "chess.limit.v1": "7" })), 120);
+  assert.equal(loadLimit(memory({ "chess.limit.v1": "abc" })), 120);
+  const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
+  assert.equal(loadLimit(broken), 120);
+  assert.doesNotThrow(() => saveLimit(broken, 60));
 });

@@ -3,7 +3,7 @@ import { createMatch, startingText, waitingHint } from "./match.js";
 import { moveList } from "./game.js";
 import { createBoard3d, webglAvailable } from "./board3d.js";
 import { loadModels, optionText } from "./models.js";
-import { acceptsModel, defaultSetup, edgeLabel, load, save, sideLabel, swapSides } from "./setup.js";
+import { DEFAULT_LIMIT, LIMITS, acceptsModel, defaultSetup, edgeLabel, load, loadLimit, save, saveLimit, sideLabel, swapSides } from "./setup.js";
 
 const PIECE = {
   wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
@@ -15,6 +15,7 @@ let match = null;
 let board3d = null;
 let types = [];
 let setup = defaultSetup([]);
+let limit = DEFAULT_LIMIT; // seconds per move; 0 = no limit
 const store = (() => {
   try {
     return window.localStorage;
@@ -28,6 +29,10 @@ const app = connect({
   onInit() {},
   onMessage(message) {
     if (match) void match.onMessage(message);
+  },
+  // Only an app that reports delivery calls this (and sets app.canReportDelivery); an older one never does.
+  onNotice(notice) {
+    if (match) match.onNotice(notice);
   },
 });
 
@@ -98,12 +103,18 @@ function showHint() {
   if (!match) return;
   $("hint").textContent = waitingHint(match);
   if (match.phase === "starting") $("status").textContent = startingText(match);
+  if (match.tick()) render(match);
   const secs = match.askedAt ? Math.max(0, Math.round((Date.now() - match.askedAt) / 1000)) : 0;
+  const left = match.deadline ? Math.max(0, Math.ceil((match.deadline - Date.now()) / 1000)) : null;
   for (const side of ["w", "b"]) {
     const turn = match.phase === "playing" && match.chess.turn() === side;
     const sent = match.sending && match.sending.to === match.players[side] ? Math.round((Date.now() - match.sending.since) / 1000) : null;
-    $(`who-${side}`).querySelector(".turn").textContent =
-      sent !== null ? `sending… ${sent}s` : turn ? (match.askedAt ? `thinking… ${secs}s` : "waiting for the player…") : "";
+    const el = $(`who-${side}`).querySelector(".turn");
+    el.textContent =
+      sent !== null ? `sending… ${sent}s`
+      : turn ? (match.askedAt ? (left !== null ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left` : `thinking… ${secs}s`) : "waiting for the player…")
+      : "";
+    el.classList.toggle("low", turn && sent === null && left !== null && left <= 10);
   }
 }
 setInterval(showHint, 1000);
@@ -154,6 +165,12 @@ function fillSetup() {
   if (match) render(match);
 }
 
+function fillLimit() {
+  const sel = $("limit");
+  sel.replaceChildren(...LIMITS.map((l) => Object.assign(document.createElement("option"), { value: String(l.value), textContent: l.label })));
+  sel.value = String(limit);
+}
+
 function readSetup() {
   for (const side of ["w", "b"]) {
     const type = $(`type-${side}`).value;
@@ -172,6 +189,7 @@ async function init() {
     return;
   }
   setup = load(store, types);
+  limit = loadLimit(store);
   if (webglAvailable()) {
     try {
       board3d = createBoard3d($("board"));
@@ -180,7 +198,7 @@ async function init() {
       board3d = null; // the flat board takes over
     }
   }
-  match = createMatch({ app, onChange: render });
+  match = createMatch({ app, onChange: render, delivery: () => app.canReportDelivery === true });
   for (const side of ["w", "b"]) {
     $(`type-${side}`).addEventListener("change", () => {
       // A new CLI has its own models: the old model text does not carry over.
@@ -200,16 +218,24 @@ async function init() {
     });
     $(`model-${side}-other`).addEventListener("input", readSetup);
   }
+  $("limit").addEventListener("change", () => {
+    limit = Number($("limit").value);
+    saveLimit(store, limit);
+  });
   $("swap").addEventListener("click", () => {
     setup = swapSides(setup);
     save(store, setup);
     fillSetup();
   });
-  $("start").addEventListener("click", () => void match.start(setup));
+  $("start").addEventListener("click", () => {
+    match.limit = limit;
+    void match.start(setup);
+  });
   $("rematch").addEventListener("click", () => void match.rematch());
   $("swapcolours").addEventListener("click", () => void match.rematch({ swap: true }));
   $("change").addEventListener("click", () => match.changePlayers());
   fillSetup();
+  fillLimit();
 }
 
 void init();

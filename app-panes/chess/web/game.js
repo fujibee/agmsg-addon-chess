@@ -60,8 +60,14 @@ export function newGame() {
 
 const SIDE = { w: "white", b: "black" };
 
+/** "30 seconds", "1 minute", "2 minutes". */
+export function limitText(seconds) {
+  if (seconds >= 60 && seconds % 60 === 0) return seconds === 60 ? "1 minute" : `${seconds / 60} minutes`;
+  return `${seconds} seconds`;
+}
+
 /** The text sent to the side to move. */
-export function turnPrompt(chess, { first = false, problem = "", again = false, referee = "chess" } = {}) {
+export function turnPrompt(chess, { first = false, problem = "", again = false, referee = "chess", limit = 0 } = {}) {
   const side = SIDE[chess.turn()];
   const lines = [];
   if (first) lines.push(`You are playing ${side} in ${again ? "a new game" : "a game"} of chess. A referee keeps the board and sends you the position each turn.${again ? " Forget the positions and moves of any earlier game." : ""}`);
@@ -69,6 +75,7 @@ export function turnPrompt(chess, { first = false, problem = "", again = false, 
   lines.push(`It is your move (${side}). Position (FEN): ${chess.fen()}`);
   lines.push(`Moves so far: ${moveList(chess) || "none"}`);
   lines.push(`Send your move back to ${referee} as an agmsg message whose body is one move in UCI (for example e2e4, or e7e8q for a promotion) and nothing else. Writing it in your own pane does not count: ${referee} only reads messages sent to it.`);
+  if (limit > 0) lines.push(`Time limit: reply within ${limitText(limit)} of receiving this message${problem ? " (the clock for this move keeps running)" : ""}. If it runs out you lose the game.`);
   return lines.join("\n");
 }
 

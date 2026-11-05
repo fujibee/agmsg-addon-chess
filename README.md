@@ -16,7 +16,9 @@ The two players open beside the chess pane in the same tab, black above white. A
 
 After a game, **Rematch** and **Swap colours** reuse the two running agents; **Change players** goes back to the setup and the next Start starts two new agents (the earlier pair keeps running; close its panes if you don't need it). Reloading the pane forgets the game; the agents stay in the team.
 
-If a player does not answer for a while, the pane says which side has not answered yet and how long ago the turn notice was delivered. The game keeps waiting; nothing times out. (A freshly started Claude Code can also sit at "Do you trust this folder?" in its own pane; the app's grant card can trust `~/agmsg-agents` once, if you tick the box.)
+You pick the time per move when you start a game: 30 seconds, 1 minute, 2 minutes (the default), 5 minutes, or no limit. A side's clock starts when its turn notice reaches the player and restarts every move; asking again after a refused move does not restart it. The pane shows the time left next to the side to move, the turn notice states the limit, and a side that runs out loses ("White lost on time"); Rematch and Change players stay available. An app that cannot report when a notice reaches a player cannot time a side's first move fairly (its agent may still be starting), so that move is untimed and the log says so; later moves are timed from the send.
+
+If a player does not answer for a while, the pane says which side has not answered yet and how long ago the turn notice was delivered. With no limit the game keeps waiting; nothing else times out. (A freshly started Claude Code can also sit at "Do you trust this folder?" in its own pane; the app's grant card can trust `~/agmsg-agents` once, if you tick the box.)
 
 ## What it needs
 

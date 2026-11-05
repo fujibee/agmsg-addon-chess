@@ -1,6 +1,6 @@
 // One game: joins the team, starts the two players, and keeps asking the side to move until the game ends.
 // `app` is the agmsg add-on connection; everything else here is plain data, so a test can play a whole game.
-import { newGame, outcome, readUci, resultText, tryMove, turnPrompt } from "./game.js";
+import { limitText, newGame, outcome, readUci, resultText, tryMove, turnPrompt } from "./game.js";
 
 /**
  * A hint, never a stop: the side to move has not answered for a while. It says only that and for how long, since
@@ -49,7 +49,13 @@ export function startingText(m, now = Date.now()) {
     .join(" · ");
 }
 
-export function createMatch({ app, onChange = () => {} }) {
+/**
+ * `delivery` says whether the app reports the moment a turn notice reaches a player (a boolean, or a function asked
+ * each time). With it, a side's clock starts at that moment (`onNotice`); without it, a side's first move is not
+ * timed (its pane may still be starting) and later moves are timed from the send.
+ */
+export function createMatch({ app, onChange = () => {}, delivery = false }) {
+  const delivers = () => (typeof delivery === "function" ? !!delivery() : !!delivery);
   const m = {
     phase: "idle", // idle | starting | playing | over | error
     chess: newGame(),
@@ -59,7 +65,11 @@ export function createMatch({ app, onChange = () => {} }) {
     problems: 0,
     result: "",
     error: "",
-    askedAt: 0, // when the side to move was last asked, ms since epoch
+    askedAt: 0, // when the side to move's clock started (its notice was delivered), ms since epoch; 0 = not yet
+    limit: 0, // seconds a side has for a move; 0 = no limit
+    timed: false, // whether the move being played is timed
+    deadline: 0, // when the side to move runs out of time, ms since epoch; 0 = no deadline
+    timedOut: "", // the side that lost on time
     labels: { w: "", b: "" }, // "claude-code · haiku", shown at each side of the board
     sides: { w: null, b: null }, // what was chosen for each side: { type, model }
     spawned: 0, // how many agents this pane has started (the page never starts any before Start)
@@ -87,21 +97,39 @@ export function createMatch({ app, onChange = () => {} }) {
   // which send is in flight.
   let sends = Promise.resolve();
   let asks = 0;
+  const settled = new Set(); // sides asked since their pair started: their panes are past startup
+  function startClock(at) {
+    m.askedAt = at;
+    m.deadline = m.timed ? at + m.limit * 1000 : 0;
+  }
   function ask(problem = "") {
     const side = m.chess.turn();
     const first = !introduced.has(side);
     introduced.add(side);
     const mine = ++asks; // only the newest ask owns the clock; a send that finishes late must not start it
-    m.askedAt = 0; // the count starts once the turn notice is delivered, not while the player is still starting
+    const fresh = !problem; // a retry of the same move keeps the clock the move already has
+    if (fresh) {
+      const startingUp = !settled.has(side);
+      settled.add(side);
+      // Without a delivery report a side's first move cannot be timed fairly: its pane may still be starting.
+      m.timed = m.limit > 0 && (delivers() || !startingUp);
+      if (m.limit > 0 && !m.timed) say(`${side === "w" ? "White" : "Black"}: no time limit on the first move (this app cannot report delivery)`);
+      m.askedAt = 0; // the clock starts once the turn notice is delivered, not while the player is still starting
+      m.deadline = 0;
+    }
     const to = m.players[side];
-    const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me });
+    const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me, limit: m.timed ? m.limit : 0 });
     const run = sends.then(async () => {
       m.sending = { to, since: Date.now() };
-      if (mine === asks) m.askedAt = 0;
+      if (fresh && mine === asks) {
+        m.askedAt = 0;
+        m.deadline = 0;
+      }
       onChange(m);
       try {
         await app.messages.send(to, body);
-        if (mine === asks) m.askedAt = Date.now();
+        // Without a delivery report the send is the nearest moment there is.
+        if (mine === asks && m.askedAt === 0 && !delivers()) startClock(Date.now());
       } finally {
         m.sending = null;
       }
@@ -109,6 +137,26 @@ export function createMatch({ app, onChange = () => {} }) {
     sends = run.catch(() => {});
     return run;
   }
+
+  /** The app typed a turn notice into `name`'s pane at `at` (ms since epoch): that side's clock starts. */
+  m.onNotice = ({ name, at } = {}) => {
+    if (!delivers() || m.phase !== "playing" || m.askedAt !== 0) return;
+    if (!name || name !== m.players[m.chess.turn()]) return;
+    startClock(Number.isFinite(at) ? at : Date.now());
+    onChange(m);
+  };
+
+  /** Looked at every second: the side to move loses when its time for the move has run out. */
+  m.tick = (now = Date.now()) => {
+    if (m.phase !== "playing" || !m.deadline || now < m.deadline) return false;
+    const side = m.chess.turn();
+    m.phase = "over";
+    m.timedOut = side;
+    m.deadline = 0;
+    m.result = `${side === "w" ? "White" : "Black"} lost on time (no move within ${limitText(m.limit)}).`;
+    say(`${m.players[side]}: out of time`);
+    return true;
+  };
 
   /** `setup` is { w: { type, model? }, b: { type, model? } }; a bare (type, model) means both sides the same. */
   m.start = async (setup, model) => {
@@ -159,6 +207,9 @@ export function createMatch({ app, onChange = () => {} }) {
     m.chess = newGame();
     m.problems = 0;
     m.result = "";
+    m.timedOut = "";
+    m.askedAt = 0;
+    m.deadline = 0;
     m.log = [];
     introduced.clear();
     m.again = true;
@@ -187,6 +238,7 @@ export function createMatch({ app, onChange = () => {} }) {
   m.changePlayers = () => {
     if (m.phase !== "over" && m.phase !== "error") return;
     m.previous = [...m.previous, m.players.w, m.players.b].filter(Boolean);
+    settled.clear();
     m.error = "";
     m.run++;
     m.players = { w: "", b: "" };
@@ -199,6 +251,11 @@ export function createMatch({ app, onChange = () => {} }) {
   };
 
   m.onMessage = async (msg) => {
+    if (m.phase === "over" && m.timedOut && msg.to === m.me && msg.from === m.players[m.timedOut] && !seen.has(msg.id)) {
+      seen.add(msg.id);
+      say(`${msg.from}: ignored a reply that came after the time ran out`);
+      return;
+    }
     if (m.phase !== "playing" || seen.has(msg.id)) return;
     if (msg.to !== m.me || msg.from !== m.players[m.chess.turn()]) return;
     seen.add(msg.id);

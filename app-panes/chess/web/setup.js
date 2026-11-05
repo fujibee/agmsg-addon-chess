@@ -1,6 +1,34 @@
 // What the setup screen offers and remembers. Plain data in and out, so a test can cover it.
 
 const KEY = "chess.setup.v1";
+const LIMIT_KEY = "chess.limit.v1";
+
+/** The time per move a game can be started with, in seconds; 0 is no limit. */
+export const LIMITS = [
+  { value: 30, label: "30 seconds" },
+  { value: 60, label: "1 minute" },
+  { value: 120, label: "2 minutes" },
+  { value: 300, label: "5 minutes" },
+  { value: 0, label: "No limit" },
+];
+export const DEFAULT_LIMIT = 120;
+
+export function loadLimit(storage) {
+  try {
+    const n = Number(storage.getItem(LIMIT_KEY));
+    return storage.getItem(LIMIT_KEY) !== null && LIMITS.some((l) => l.value === n) ? n : DEFAULT_LIMIT;
+  } catch (_) {
+    return DEFAULT_LIMIT;
+  }
+}
+
+export function saveLimit(storage, seconds) {
+  try {
+    storage.setItem(LIMIT_KEY, String(seconds));
+  } catch (_) {
+    /* the choice is simply not remembered */
+  }
+}
 
 /** The two sides' choices from what the app can start, falling back to the first type for a side that has none. */
 export function defaultSetup(types) {
