@@ -32,3 +32,7 @@ main:has(#board.is-3d) { max-width: 820px; }
 #after .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 #result { font-weight: 700; font-size: 16px; margin: 6px 0; }
 #still { color: GrayText; font-size: 13px; }
+
+.model-other { width: 100%; box-sizing: border-box; margin-top: 4px; }
+.model-note { margin: 4px 0 0; min-height: 0; font-size: 12px; opacity: 0.7; }
+.model-note:empty { display: none; }

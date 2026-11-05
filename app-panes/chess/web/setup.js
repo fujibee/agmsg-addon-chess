@@ -1,10 +1,5 @@
 // What the setup screen offers and remembers. Plain data in and out, so a test can cover it.
 
-/** Model names worth suggesting per CLI. Free text is always allowed; an unknown CLI gets no suggestions. */
-export const SUGGESTIONS = {
-  "claude-code": ["opus", "sonnet", "haiku"],
-};
-
 const KEY = "chess.setup.v1";
 
 /** The two sides' choices from what the app can start, falling back to the first type for a side that has none. */

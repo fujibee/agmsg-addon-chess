@@ -140,8 +140,8 @@ test("nothing is started before Start; Start starts exactly two, each with its o
   assert.equal(m.phase, "idle");
   await play();
   assert.equal(f.spawned.length, 2);
-  assert.deepEqual(f.spawned[0], { type: "claude-code", name: "white", model: "opus" });
-  assert.deepEqual(f.spawned[1], { type: "codex", name: "black" });
+  assert.deepEqual(f.spawned[0], { type: "claude-code", name: "white", model: "opus", order: 1 });
+  assert.deepEqual(f.spawned[1], { type: "codex", name: "black", order: 0 });
   assert.deepEqual(m.labels, { w: "claude-code \u00b7 opus", b: "codex" });
   assert.deepEqual(m.sides, { w: { type: "claude-code", model: "opus" }, b: { type: "codex", model: "" } });
 });

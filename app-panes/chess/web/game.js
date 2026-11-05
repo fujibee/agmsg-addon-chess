@@ -61,14 +61,14 @@ export function newGame() {
 const SIDE = { w: "white", b: "black" };
 
 /** The text sent to the side to move. */
-export function turnPrompt(chess, { first = false, problem = "", again = false } = {}) {
+export function turnPrompt(chess, { first = false, problem = "", again = false, referee = "chess" } = {}) {
   const side = SIDE[chess.turn()];
   const lines = [];
   if (first) lines.push(`You are playing ${side} in ${again ? "a new game" : "a game"} of chess. A referee keeps the board and sends you the position each turn.${again ? " Forget the positions and moves of any earlier game." : ""}`);
   if (problem) lines.push(`Your last reply was not accepted: ${problem}. The position has not changed. Legal moves: ${legalUci(chess).join(" ")}.`);
   lines.push(`It is your move (${side}). Position (FEN): ${chess.fen()}`);
   lines.push(`Moves so far: ${moveList(chess) || "none"}`);
-  lines.push("Reply with one move in UCI (for example e2e4, or e7e8q for a promotion), nothing else.");
+  lines.push(`Send your move back to ${referee} as an agmsg message whose body is one move in UCI (for example e2e4, or e7e8q for a promotion) and nothing else. Writing it in your own pane does not count: ${referee} only reads messages sent to it.`);
   return lines.join("\n");
 }
 

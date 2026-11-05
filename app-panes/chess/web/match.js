@@ -91,7 +91,7 @@ export function createMatch({ app, onChange = () => {} }) {
     introduced.add(side);
     m.askedAt = Date.now();
     const to = m.players[side];
-    const body = turnPrompt(m.chess, { first, problem, again: m.again });
+    const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me });
     const run = sends.then(async () => {
       m.sending = { to, since: Date.now() };
       onChange(m);
@@ -122,7 +122,9 @@ export function createMatch({ app, onChange = () => {} }) {
         m.progress[side] = { state: "starting", since: Date.now() };
         onChange(m);
         try {
-          const entry = await app.agents.spawn(type, want, wanted ? { model: wanted } : {});
+          // `order` is where the app seats the player in the column beside this pane (black above white), whichever
+          // of the two starts first.
+          const entry = await app.agents.spawn(type, want, { ...(wanted ? { model: wanted } : {}), order: side === "b" ? 0 : 1 });
           m.spawned++;
           if (entry.state !== "failed") m.players[side] = entry.name;
           m.labels[side] = wanted ? `${type} \u00b7 ${wanted}` : type;

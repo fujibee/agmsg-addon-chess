@@ -53,6 +53,8 @@ test("the prompt carries the FEN, the move list and the reply format", () => {
   assert.ok(p.includes("1. e4"));
   assert.ok(p.includes("e7e8 is not legal"));
   assert.ok(p.includes(legalUci(g).join(" ")));
-  assert.match(p, /one move in UCI .*nothing else/);
+  assert.match(p, /agmsg message whose body is one move in UCI .*nothing else/);
+  assert.match(p, /Send your move back to chess /);
+  assert.match(turnPrompt(g, { referee: "ref-1" }), /back to ref-1 as an agmsg message.*ref-1 only reads/s);
   assert.equal(moveList(newGame()), "");
 });

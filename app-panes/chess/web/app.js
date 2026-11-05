@@ -2,7 +2,8 @@ import { connect } from "./agmsg-addon.js";
 import { createMatch, startingText, waitingHint } from "./match.js";
 import { moveList } from "./game.js";
 import { createBoard3d, webglAvailable } from "./board3d.js";
-import { SUGGESTIONS, acceptsModel, defaultSetup, edgeLabel, load, save, sideLabel, swapSides } from "./setup.js";
+import { loadModels, optionText } from "./models.js";
+import { acceptsModel, defaultSetup, edgeLabel, load, save, sideLabel, swapSides } from "./setup.js";
 
 const PIECE = {
   wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
@@ -94,6 +95,19 @@ function showHint() {
 }
 setInterval(showHint, 1000);
 
+const OTHER = "\u0000other";
+const modelChoices = new Map(); // type -> the answer of loadModels, once it came
+
+/** Asks for a type's model choices once; the setup is drawn again when they arrive. */
+function wantModels(type) {
+  if (modelChoices.has(type)) return;
+  modelChoices.set(type, null);
+  void loadModels(app, type).then((r) => {
+    modelChoices.set(type, r);
+    fillSetup();
+  });
+}
+
 function fillSetup() {
   for (const side of ["w", "b"]) {
     const sel = $(`type-${side}`);
@@ -101,8 +115,27 @@ function fillSetup() {
     sel.value = setup[side].type;
     const models = acceptsModel(types, setup[side].type);
     $(`model-${side}-wrap`).hidden = !models;
-    $(`model-${side}`).value = models ? setup[side].model : "";
-    $(`models-${side}`).replaceChildren(...(SUGGESTIONS[setup[side].type] ?? []).map((v) => Object.assign(document.createElement("option"), { value: v })));
+    const pick = $(`model-${side}`);
+    const other = $(`model-${side}-other`);
+    const note = $(`model-${side}-note`);
+    if (!models) {
+      other.hidden = true;
+      note.textContent = "";
+      continue;
+    }
+    wantModels(setup[side].type);
+    const got = modelChoices.get(setup[side].type);
+    const list = got?.options ?? [];
+    const choices = list.some((o) => o.value === "") ? list : [{ value: "", label: "CLI default", description: "" }, ...list];
+    pick.replaceChildren(
+      ...choices.map((o) => Object.assign(document.createElement("option"), { value: o.value, textContent: optionText(o) })),
+      Object.assign(document.createElement("option"), { value: OTHER, textContent: "Other\u2026" }),
+    );
+    const known = choices.some((o) => o.value === setup[side].model);
+    pick.value = known ? setup[side].model : OTHER;
+    other.hidden = known;
+    other.value = known ? "" : setup[side].model;
+    note.textContent = got === null ? "Loading the models\u2026" : got.reason ? `Showing a built-in list: ${got.reason}` : "";
   }
   $("versus").textContent = `${sideLabel(setup.w)}  vs  ${sideLabel(setup.b)}`;
   if (match) render(match);
@@ -111,7 +144,8 @@ function fillSetup() {
 function readSetup() {
   for (const side of ["w", "b"]) {
     const type = $(`type-${side}`).value;
-    setup[side] = { type, model: acceptsModel(types, type) ? $(`model-${side}`).value.trim() : "" };
+    const picked = $(`model-${side}`).value;
+    setup[side] = { type, model: acceptsModel(types, type) ? (picked === OTHER ? $(`model-${side}-other`).value.trim() : picked) : "" };
   }
   save(store, setup);
   fillSetup();
@@ -138,9 +172,19 @@ async function init() {
     $(`type-${side}`).addEventListener("change", () => {
       // A new CLI has its own models: the old model text does not carry over.
       $(`model-${side}`).value = "";
+      $(`model-${side}-other`).value = "";
       readSetup();
     });
-    $(`model-${side}`).addEventListener("input", readSetup);
+    $(`model-${side}`).addEventListener("change", () => {
+      // "Other..." shows the box empty and waits for a name; a typed name is read on input
+      if ($(`model-${side}`).value === OTHER) {
+        $(`model-${side}-other`).hidden = false;
+        $(`model-${side}-other`).focus();
+        return;
+      }
+      readSetup();
+    });
+    $(`model-${side}-other`).addEventListener("input", readSetup);
   }
   $("swap").addEventListener("click", () => {
     setup = swapSides(setup);
