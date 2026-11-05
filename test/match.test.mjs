@@ -90,7 +90,8 @@ test("waitingHint stays quiet at first, then asks to look at the pane, and never
   const m = { phase: "playing", chess: newGame(), askedAt: 1000 };
   assert.equal(waitingHint(m, 1000 + 10_000), "");
   assert.match(waitingHint(m, 1000 + 60_000), /^White hasn't answered yet/);
-  assert.match(waitingHint(m, 1000 + 60_000), /Do you trust this folder/);
+  assert.match(waitingHint(m, 1000 + 60_000), /\(60 s since the turn notice\)/);
+  assert.doesNotMatch(waitingHint(m, 1000 + 60_000), /trust/);
   assert.equal(waitingHint({ ...m, phase: "over" }, 1000 + 60_000), "");
   assert.equal(m.phase, "playing");
 });
@@ -289,4 +290,22 @@ test("a second send waits for the first: the reply to a slow send is played at o
   await Promise.all([started, replied]);
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(m.sending, null);
+});
+
+test("the thinking count starts when the turn notice is delivered, not while it is being sent", async () => {
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const seen = [];
+  const app = {
+    team: { join: async () => ({ name: "chess" }) },
+    agents: { spawn: async (type, name) => ({ name, type, state: "running" }) },
+    messages: { send: async () => gate },
+  };
+  const m = createMatch({ app, onChange: (x) => seen.push({ askedAt: x.askedAt, sending: !!x.sending }) });
+  const started = m.start("claude-code");
+  while (!m.sending) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(m.askedAt, 0, "no count while the notice is still going out");
+  release({});
+  await started;
+  assert.ok(m.askedAt > 0, "the count starts once the notice was delivered");
 });

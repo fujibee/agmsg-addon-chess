@@ -78,10 +78,22 @@ function renderText(m) {
   }
   showHint();
   $("log").replaceChildren(...m.log.slice(-30).map((t) => Object.assign(document.createElement("li"), { textContent: t })));
-  $("start").disabled = m.phase !== "idle" || !setup.w.type || !setup.b.type;
+  const missing = idle ? missingChoice(setup) : "";
+  $("start").disabled = !idle || !!missing;
+  $("start-why").textContent = missing;
 }
 
 // The clock-dependent bits (the thinking time, the waiting hint) look again every second while a game runs.
+/** Which choice keeps Start off, in a few words, or "" when the game can start. */
+function missingChoice(s) {
+  for (const side of ["w", "b"]) {
+    const name = side === "w" ? "White" : "Black";
+    if (!s[side].type) return `Choose ${name}'s player.`;
+    if (acceptsModel(types, s[side].type) && $(`model-${side}`).value === OTHER && !$(`model-${side}-other`).value.trim()) return `Type ${name}'s model name, or pick one from the list.`;
+  }
+  return "";
+}
+
 function showHint() {
   if (!match) return;
   $("hint").textContent = waitingHint(match);
@@ -90,7 +102,8 @@ function showHint() {
   for (const side of ["w", "b"]) {
     const turn = match.phase === "playing" && match.chess.turn() === side;
     const sent = match.sending && match.sending.to === match.players[side] ? Math.round((Date.now() - match.sending.since) / 1000) : null;
-    $(`who-${side}`).querySelector(".turn").textContent = sent !== null ? `sending… ${sent}s` : turn ? `thinking… ${secs}s` : "";
+    $(`who-${side}`).querySelector(".turn").textContent =
+      sent !== null ? `sending… ${sent}s` : turn ? (match.askedAt ? `thinking… ${secs}s` : "waiting for the player…") : "";
   }
 }
 setInterval(showHint, 1000);
@@ -180,6 +193,7 @@ async function init() {
       if ($(`model-${side}`).value === OTHER) {
         $(`model-${side}-other`).hidden = false;
         $(`model-${side}-other`).focus();
+        if (match) render(match);
         return;
       }
       readSetup();

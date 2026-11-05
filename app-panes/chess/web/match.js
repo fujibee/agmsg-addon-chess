@@ -3,13 +3,14 @@
 import { newGame, outcome, readUci, resultText, tryMove, turnPrompt } from "./game.js";
 
 /**
- * A hint, never a stop: the side to move has not answered for a while. A freshly started Claude Code can sit at
- * "Do you trust this folder?" in its own pane, where only a keypress there helps. The game keeps waiting.
+ * A hint, never a stop: the side to move has not answered for a while. It says only that and for how long, since
+ * the cause is not known from here. The game keeps waiting.
  */
 export function waitingHint(m, now = Date.now(), afterMs = 45000) {
   if (m.phase !== "playing" || !m.askedAt || now - m.askedAt < afterMs) return "";
   const side = m.chess.turn() === "w" ? "White" : "Black";
-  return `${side} hasn't answered yet \u2014 if its pane asks "Do you trust this folder?", press Enter there.`;
+  const secs = Math.round((now - m.askedAt) / 1000);
+  return `${side} hasn't answered yet (${secs} s since the turn notice).`;
 }
 
 /**
@@ -89,7 +90,7 @@ export function createMatch({ app, onChange = () => {} }) {
     const side = m.chess.turn();
     const first = !introduced.has(side);
     introduced.add(side);
-    m.askedAt = Date.now();
+    m.askedAt = 0; // the count starts once the turn notice is delivered, not while the player is still starting
     const to = m.players[side];
     const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me });
     const run = sends.then(async () => {
@@ -97,6 +98,7 @@ export function createMatch({ app, onChange = () => {} }) {
       onChange(m);
       try {
         await app.messages.send(to, body);
+        m.askedAt = Date.now();
       } finally {
         m.sending = null;
       }

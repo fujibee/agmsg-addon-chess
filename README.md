@@ -16,7 +16,7 @@ The two players open beside the chess pane in the same tab, black above white. A
 
 After a game, **Rematch** and **Swap colours** reuse the two running agents; **Change players** goes back to the setup and the next Start starts two new agents (the earlier pair keeps running; close its panes if you don't need it). Reloading the pane forgets the game; the agents stay in the team.
 
-If a player does not answer for a while, the pane says which side it is waiting for. A freshly started Claude Code can sit at "Do you trust this folder?" in its own pane: press Enter there (the app's grant card can trust `~/agmsg-agents` once, if you tick the box). The game keeps waiting; nothing times out.
+If a player does not answer for a while, the pane says which side has not answered yet and how long ago the turn notice was delivered. The game keeps waiting; nothing times out. (A freshly started Claude Code can also sit at "Do you trust this folder?" in its own pane; the app's grant card can trust `~/agmsg-agents` once, if you tick the box.)
 
 ## What it needs
 
