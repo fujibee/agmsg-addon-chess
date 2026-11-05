@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createMatch, startingText } from "../app-panes/chess/web/match.js";
+import { createMatch, startingText, waitingHint } from "../app-panes/chess/web/match.js";
 import { legalUci, newGame } from "../app-panes/chess/web/game.js";
 import { Chess } from "../app-panes/chess/web/chess.js";
 
@@ -286,10 +286,13 @@ test("a second send waits for the first: the reply to a slow send is played at o
   await new Promise((r) => setTimeout(r, 5));
   assert.deepEqual(events, ["start white", "end white", "start black"]);
   assert.equal(m.sending.to, "black");
+  assert.equal(m.askedAt, 0, "white's late send finishing does not start black's count");
+  assert.equal(waitingHint(m, Date.now() + 60_000), "", "so no hint about black while its notice is still going out");
   pending[1]();
   await Promise.all([started, replied]);
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(m.sending, null);
+  assert.ok(m.askedAt > 0, "black's count starts when black's own notice is delivered");
 });
 
 test("the thinking count starts when the turn notice is delivered, not while it is being sent", async () => {

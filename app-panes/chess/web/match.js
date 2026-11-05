@@ -86,19 +86,22 @@ export function createMatch({ app, onChange = () => {} }) {
   // per message) does not hold up anything else: the board is drawn before the send starts, and `m.sending` says
   // which send is in flight.
   let sends = Promise.resolve();
+  let asks = 0;
   function ask(problem = "") {
     const side = m.chess.turn();
     const first = !introduced.has(side);
     introduced.add(side);
+    const mine = ++asks; // only the newest ask owns the clock; a send that finishes late must not start it
     m.askedAt = 0; // the count starts once the turn notice is delivered, not while the player is still starting
     const to = m.players[side];
     const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me });
     const run = sends.then(async () => {
       m.sending = { to, since: Date.now() };
+      if (mine === asks) m.askedAt = 0;
       onChange(m);
       try {
         await app.messages.send(to, body);
-        m.askedAt = Date.now();
+        if (mine === asks) m.askedAt = Date.now();
       } finally {
         m.sending = null;
       }
