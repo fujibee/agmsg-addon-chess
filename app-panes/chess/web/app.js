@@ -30,7 +30,8 @@ const app = connect({
   onMessage(message) {
     if (match) void match.onMessage(message);
   },
-  // Only an app that reports delivery calls this (and sets app.canReportDelivery); an older one never does.
+  // Fallback-only for now: the bundled adapter does not pass this on or set app.canReportDelivery yet. It comes
+  // with the app's delivery event, together with the adapter change.
   onNotice(notice) {
     if (match) match.onNotice(notice);
   },

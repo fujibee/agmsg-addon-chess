@@ -51,7 +51,8 @@ export function startingText(m, now = Date.now()) {
 
 /**
  * `delivery` says whether the app reports the moment a turn notice reaches a player (a boolean, or a function asked
- * each time). With it, a side's clock starts at that moment (`onNotice`); without it, a side's first move is not
+ * each time). The bundled adapter does not carry that report yet, so for now this runs on the fallback below; the
+ * report comes with the app's event, together with the adapter change. With it, a side's clock starts at that moment (`onNotice`); without it, a side's first move is not
  * timed (its pane may still be starting) and later moves are timed from the send.
  */
 export function createMatch({ app, onChange = () => {}, delivery = false }) {
@@ -68,6 +69,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     askedAt: 0, // when the side to move's clock started (its notice was delivered), ms since epoch; 0 = not yet
     limit: 0, // seconds a side has for a move; 0 = no limit
     timed: false, // whether the move being played is timed
+    askStart: 0, // when the side to move was asked, ms since epoch; a delivery report from before it is stale
     deadline: 0, // when the side to move runs out of time, ms since epoch; 0 = no deadline
     timedOut: "", // the side that lost on time
     labels: { w: "", b: "" }, // "claude-code · haiku", shown at each side of the board
@@ -116,6 +118,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
       if (m.limit > 0 && !m.timed) say(`${side === "w" ? "White" : "Black"}: no time limit on the first move (this app cannot report delivery)`);
       m.askedAt = 0; // the clock starts once the turn notice is delivered, not while the player is still starting
       m.deadline = 0;
+      m.askStart = Date.now();
     }
     const to = m.players[side];
     const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me, limit: m.timed ? m.limit : 0 });
@@ -142,6 +145,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
   m.onNotice = ({ name, at } = {}) => {
     if (!delivers() || m.phase !== "playing" || m.askedAt !== 0) return;
     if (!name || name !== m.players[m.chess.turn()]) return;
+    if (Number.isFinite(at) && at < m.askStart) return; // a report from before this ask is about an earlier notice
     startClock(Number.isFinite(at) ? at : Date.now());
     onChange(m);
   };
@@ -264,6 +268,13 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     const wrote = Date.parse(msg.created_at ?? "");
     if (Number.isFinite(wrote) && wrote < Math.floor(m.gameStart / 1000) * 1000) {
       say(`${msg.from}: ignored a reply written before this game began`);
+      return;
+    }
+    // Judged by the time the reply reaches this pane (Date.now() here), not by the sender's timestamp: a reply
+    // received at or after the deadline is late, whether or not the display timer has noticed yet.
+    if (m.deadline && Date.now() >= m.deadline) {
+      m.tick(Math.max(Date.now(), m.deadline));
+      say(`${msg.from}: ignored a reply that came after the time ran out`);
       return;
     }
     try {
