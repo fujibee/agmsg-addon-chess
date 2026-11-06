@@ -1,4 +1,5 @@
 // The referee's rules, with no page and no agmsg in it. chess.js decides what is legal.
+import { t } from "./strings.js";
 import { Chess } from "./chess.js";
 
 const UCI = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
@@ -116,8 +117,8 @@ const SIDE = { w: "white", b: "black" };
 
 /** "30 seconds", "1 minute", "2 minutes". */
 export function limitText(seconds) {
-  if (seconds >= 60 && seconds % 60 === 0) return seconds === 60 ? "1 minute" : `${seconds / 60} minutes`;
-  return `${seconds} seconds`;
+  if (seconds >= 60 && seconds % 60 === 0) return seconds === 60 ? t("limit.minute") : t("limit.minutes", { n: seconds / 60 });
+  return t("limit.seconds", { n: seconds });
 }
 
 /** The text sent to the side to move. */
@@ -135,11 +136,11 @@ export function turnPrompt(chess, { first = false, problem = "", again = false, 
 
 export function resultText(o) {
   switch (o.kind) {
-    case "checkmate": return `Checkmate. ${o.winner} wins.`;
-    case "stalemate": return "Draw by stalemate.";
-    case "repetition": return "Draw by threefold repetition.";
-    case "insufficient": return "Draw: not enough material to mate.";
-    case "fifty": return "Draw by the fifty-move rule.";
-    default: return "The game is over.";
+    case "checkmate": return t("end.checkmate", { winner: o.winner });
+    case "stalemate": return t("end.stalemate");
+    case "repetition": return t("end.repetition");
+    case "insufficient": return t("end.insufficient");
+    case "fifty": return t("end.fifty");
+    default: return t("end.default");
   }
 }

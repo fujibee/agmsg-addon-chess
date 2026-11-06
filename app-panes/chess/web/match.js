@@ -1,5 +1,6 @@
 // One game: joins the team, starts the two players, and keeps asking the side to move until the game ends.
 // `app` is the agmsg add-on connection; everything else here is plain data, so a test can play a whole game.
+import { t } from "./strings.js";
 import { limitText, newGame, outcome, readUci, resultText, tryMove, turnPrompt } from "./game.js";
 
 /**
@@ -10,9 +11,9 @@ export function waitingHint(m, now = Date.now(), afterMs = 45000) {
   const since = m.askedAt || m.askStart;
   if (m.phase !== "playing" || !since || now - since < afterMs) return "";
   if (m.sending && m.sending.to === m.players?.[m.chess.turn()]) return ""; // its message has not even gone out yet
-  const side = m.chess.turn() === "w" ? "White" : "Black";
+  const side = t(m.chess.turn() === "w" ? "side.white" : "side.black");
   const secs = Math.round((now - since) / 1000);
-  return `${side} hasn't answered yet (${secs} s since ${m.askedAt ? "the turn notice" : "it was asked"}).`;
+  return t(m.askedAt ? "hint.noAnswer" : "hint.noAnswerAsked", { side, secs });
 }
 
 /**
@@ -27,13 +28,13 @@ export function spawnProblem(entry, want) {
     case "opening":
       return "";
     case "failed":
-      return `${want} could not start: ${entry.reason ?? "unknown reason"}`;
+      return t("spawn.failed", { want, reason: entry.reason ?? t("spawn.unknownReason") });
     case "orphaned":
-      return `${want} (${entry.name}) is still running from before the app restarted${entry.pid ? ` (process ${entry.pid})` : ""}, but this pane is not connected to it. Open Settings > Add-ons and choose "Open new" or "Leave it", then start again.`;
+      return t("spawn.orphaned", { want, name: entry.name, pid: entry.pid ? t("spawn.pid", { pid: entry.pid }) : "" });
     case "unknown":
-      return `${want} (${entry.name}) was starting when the app stopped${why}, and the app does not reopen it by itself. Open Settings > Add-ons and choose "Open new" or "Leave it", then start again.`;
+      return t("spawn.unknown", { want, name: entry.name, why });
     default:
-      return `${want} (${entry.name}) is ${entry.state} but has no running agent${why}. Open Settings > Add-ons and choose "Open", then start again.`;
+      return t("spawn.other", { want, name: entry.name, state: entry.state, why });
   }
 }
 
@@ -43,10 +44,10 @@ export function startingText(m, now = Date.now()) {
   return ["w", "b"]
     .map((side) => {
       const p = m.progress[side];
-      const name = side === "w" ? "White" : "Black";
-      if (!p) return `${name}…`;
+      const name = t(side === "w" ? "side.white" : "side.black");
+      if (!p) return t("starting.none", { name });
       const secs = Math.max(0, Math.round((now - p.since) / 1000));
-      return p.state === "ready" ? `${name} ready` : p.state === "failed" ? `${name} could not start` : `starting ${name}… ${secs} s`;
+      return p.state === "ready" ? t("starting.ready", { name }) : p.state === "failed" ? t("starting.failed", { name }) : t("starting.wait", { name, secs });
     })
     .join(" · ");
 }
@@ -66,6 +67,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     players: { w: "", b: "" },
     log: [],
     problems: 0,
+    refusals: [], // every reply that was not played: { ply, side, from, text, reason }
     result: "",
     error: "",
     askedAt: 0, // when the side to move's clock started (its notice was delivered), ms since epoch; 0 = not yet
@@ -121,7 +123,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
       settled.add(side);
       // Without a delivery report a side's first move cannot be timed fairly: its pane may still be starting.
       m.timed = m.limit > 0 && (delivers() || !startingUp);
-      if (m.limit > 0 && !m.timed) say(`${side === "w" ? "White" : "Black"}: no time limit on the first move (this app cannot report delivery)`);
+      if (m.limit > 0 && !m.timed) say(t("log.noLimitFirst", { side: t(side === "w" ? "side.white" : "side.black") }));
       m.askedAt = 0; // the clock starts once the turn notice is delivered, not while the player is still starting
       m.deadline = 0;
       m.askStart = Date.now();
@@ -150,6 +152,11 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     });
     sends = run.catch(() => {});
     return run;
+  }
+
+  /** Keeps what a refused reply said and why, to show on request. */
+  function refuse(msg, text, reason) {
+    m.refusals.push({ ply: m.chess.history().length + 1, side: m.chess.turn(), from: msg.from, text, reason });
   }
 
   /** The clock of the side to move starts, if this is the notice for the current ask. */
@@ -182,8 +189,8 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     m.phase = "over";
     m.timedOut = side;
     m.deadline = 0;
-    m.result = `${side === "w" ? "White" : "Black"} lost on time (no move within ${limitText(m.limit)}).`;
-    say(`${m.players[side]}: out of time`);
+    m.result = t("lost.time", { side: t(side === "w" ? "side.white" : "side.black"), limit: limitText(m.limit) });
+    say(t("log.outOfTime", { who: m.players[side] }));
     return true;
   };
 
@@ -214,7 +221,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
           const problem = spawnProblem(entry, want);
           if (problem) throw new Error(problem);
           m.progress[side] = { state: "ready", since: Date.now() };
-          say(`${entry.name} (${side === "w" ? "white" : "black"}) is ${entry.state}`);
+          say(t("log.entry", { name: entry.name, side: side === "w" ? "white" : "black", state: entry.state }));
         } catch (e) {
           m.progress[side] = { state: "failed", since: Date.now() };
           throw e;
@@ -235,6 +242,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
   function reset() {
     m.chess = newGame();
     m.problems = 0;
+    m.refusals = [];
     m.result = "";
     m.timedOut = "";
     m.askedAt = 0;
@@ -293,7 +301,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     }
     if (m.phase === "over" && m.timedOut && msg.to === m.me && msg.from === m.players[m.timedOut] && !seen.has(msg.id)) {
       seen.add(msg.id);
-      say(`${msg.from}: ignored a reply that came after the time ran out`);
+      say(t("log.lateReply", { who: msg.from }));
       return;
     }
     if (m.phase !== "playing" || seen.has(msg.id)) return;
@@ -303,30 +311,32 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     // seconds, so the start is rounded down to one.
     const wrote = Date.parse(msg.created_at ?? "");
     if (Number.isFinite(wrote) && wrote < Math.floor(m.gameStart / 1000) * 1000) {
-      say(`${msg.from}: ignored a reply written before this game began`);
+      say(t("log.oldReply", { who: msg.from }));
       return;
     }
     // Judged by the time the reply reaches this pane (Date.now() here), not by the sender's timestamp: a reply
     // received at or after the deadline is late, whether or not the display timer has noticed yet.
     if (m.deadline && Date.now() >= m.deadline) {
       m.tick(Math.max(Date.now(), m.deadline));
-      say(`${msg.from}: ignored a reply that came after the time ran out`);
+      say(t("log.lateReply", { who: msg.from }));
       return;
     }
     try {
       const read = readUci(msg.body);
       if (read.error) {
         m.problems++;
-        say(`${msg.from}: ${read.error}; asking again`);
+        refuse(msg, String(msg.body ?? "").replace(/\s+/g, " ").trim().slice(0, 60) || t("illegal.unreadable"), read.error);
+        say(t("log.unreadable", { who: msg.from, error: read.error }));
         return await ask(read.error);
       }
       const moved = tryMove(m.chess, read.uci);
       if (!moved.ok) {
         m.problems++;
-        say(`${msg.from}: ${read.uci} refused (${moved.reason}); asking again`);
+        refuse(msg, read.uci, moved.reason);
+        say(t("log.refused", { who: msg.from, uci: read.uci, reason: moved.reason }));
         return await ask(moved.reason);
       }
-      say(`${msg.from}: ${moved.san}`);
+      say(t("log.move", { who: msg.from, san: moved.san }));
       const end = outcome(m.chess);
       if (end) {
         m.phase = "over";

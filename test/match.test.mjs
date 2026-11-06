@@ -521,3 +521,23 @@ test("waitingHint says it was asked, not delivered, when no notice was reported"
   assert.match(waitingHint(m, 1000 + 60_000), /^White hasn't answered yet \(60 s since it was asked\)\.$/);
   assert.match(waitingHint({ ...m, askedAt: 2000 }, 2000 + 60_000), /\(60 s since the turn notice\)/);
 });
+
+test("every reply that was not played is kept with the move, who sent it and why", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: false });
+  await m.start("claude-code");
+  await q.reply(m, "white", "I think Nf3");
+  await q.reply(m, "white", "e2e5");
+  assert.equal(m.problems, 2);
+  assert.deepEqual(m.refusals.map((r) => [r.ply, r.side, r.from, r.text]), [
+    [1, "w", "white", "I think Nf3"],
+    [1, "w", "white", "e2e5"],
+  ]);
+  assert.match(m.refusals[0].reason, /holds no move in UCI/);
+  assert.match(m.refusals[1].reason, /not a legal move here/);
+  await q.reply(m, "white", "e2e4");
+  await q.reply(m, "black", "e7e4");
+  assert.deepEqual(m.refusals.at(-1).side, "b");
+  assert.equal(m.refusals.at(-1).ply, 2);
+  assert.equal(m.refusals.length, 3);
+});

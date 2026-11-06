@@ -1,15 +1,17 @@
 // What the setup screen offers and remembers. Plain data in and out, so a test can cover it.
 
+import { t } from "./strings.js";
+
 const KEY = "chess.setup.v1";
 const LIMIT_KEY = "chess.limit.v1";
 
 /** The time per move a game can be started with, in seconds; 0 is no limit. */
 export const LIMITS = [
-  { value: 30, label: "30 seconds" },
-  { value: 60, label: "1 minute" },
-  { value: 120, label: "2 minutes" },
-  { value: 300, label: "5 minutes" },
-  { value: 0, label: "No limit" },
+  { value: 30, label: t("limit.seconds", { n: 30 }) },
+  { value: 60, label: t("limit.minute") },
+  { value: 120, label: t("limit.minutes", { n: 2 }) },
+  { value: 300, label: t("limit.minutes", { n: 5 }) },
+  { value: 0, label: t("limit.none") },
 ];
 export const DEFAULT_LIMIT = 120;
 

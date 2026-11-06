@@ -1,6 +1,7 @@
 import { connect } from "./agmsg-addon.js";
 import { createMatch, startingText, waitingHint } from "./match.js";
 import { moveRows, sanParts } from "./game.js";
+import { t } from "./strings.js";
 import { createBoard3d, webglAvailable } from "./board3d.js";
 import { loadModels, optionText } from "./models.js";
 import { DEFAULT_LIMIT, LIMITS, acceptsModel, defaultSetup, edgeLabel, load, loadLimit, save, saveLimit, sideLabel, swapSides } from "./setup.js";
@@ -90,11 +91,27 @@ function renderMoves(m) {
   $("moves").scrollTop = $("moves").scrollHeight;
 }
 
+/** "N illegal moves", opening to which replies were not played and why; stays open while the game goes on. */
+function renderRefusals(m) {
+  const box = $("refusals");
+  const n = m.refusals.length;
+  box.hidden = n === 0;
+  if (n === 0) return;
+  box.querySelector("summary").textContent = n === 1 ? t("illegal.one") : t("illegal.other", { n });
+  box.querySelector("ul").replaceChildren(
+    ...m.refusals.map((r) =>
+      Object.assign(document.createElement("li"), {
+        textContent: t("illegal.item", { ply: r.ply, side: t(r.side === "w" ? "side.white" : "side.black"), text: r.text, reason: r.reason }),
+      }),
+    ),
+  );
+}
+
 /** What the pane says while the side to move has not been told it is its turn and its player is still starting. */
 function startingLine(m) {
   const side = m.chess.turn();
-  const who = side === "w" ? "White" : "Black";
-  return `Starting ${who} (${m.labels[side] || "player"})… waiting for it to finish starting`;
+  const who = t(side === "w" ? "side.white" : "side.black");
+  return t("status.startingLine", { side: who, label: m.labels[side] || t("player") });
 }
 
 function renderText(m) {
@@ -105,21 +122,22 @@ function renderText(m) {
   $("rematch").hidden = !finished;
   $("swapcolours").hidden = !finished;
   renderMoves(m);
+  renderRefusals(m);
   const turn = m.chess.turn() === "w" ? m.players.w || "white" : m.players.b || "black";
   $("status").textContent =
-    m.phase === "starting" ? startingText(m) || "Starting the players…"
+    m.phase === "starting" ? startingText(m) || t("status.startingPlayers")
     : m.phase === "playing" && !m.askedAt && m.startingUp ? startingLine(m)
-    : m.phase === "playing" ? `${turn} to move${m.problems ? ` · ${m.problems} refused` : ""}`
+    : m.phase === "playing" ? t("status.toMove", { who: turn })
     : m.phase === "over" ? m.result
-    : m.phase === "error" ? `Stopped: ${m.error}`
-    : "Choose the two players and start.";
+    : m.phase === "error" ? t("status.stopped", { error: m.error })
+    : t("status.choose");
   const plies = m.chess.history().length;
-  $("result").textContent = finished ? `${m.result} ${Math.ceil(plies / 2)} moves.` : "";
-  $("still").textContent = m.previous.length ? "The previous players are still running; close their panes if you don't need them." : "";
+  $("result").textContent = finished ? t("result.moves", { result: m.result, n: Math.ceil(plies / 2) }) : "";
+  $("still").textContent = m.previous.length ? t("still") : "";
   for (const side of ["w", "b"]) {
     const who = $(`who-${side}`);
     const label = edgeLabel(m.sides[side] ?? (idle ? setup[side] : null), types);
-    who.querySelector(".name").textContent = label ? `${side === "w" ? "White" : "Black"} · ${label}` : "";
+    who.querySelector(".name").textContent = label ? `${t(side === "w" ? "side.white" : "side.black")} · ${label}` : "";
     who.classList.toggle("on", m.phase === "playing" && m.chess.turn() === side);
   }
   showHint();
@@ -133,9 +151,9 @@ function renderText(m) {
 /** Which choice keeps Start off, in a few words, or "" when the game can start. */
 function missingChoice(s) {
   for (const side of ["w", "b"]) {
-    const name = side === "w" ? "White" : "Black";
-    if (!s[side].type) return `Choose ${name}'s player.`;
-    if (acceptsModel(types, s[side].type) && $(`model-${side}`).value === OTHER && !$(`model-${side}-other`).value.trim()) return `Type ${name}'s model name, or pick one from the list.`;
+    const name = t(side === "w" ? "side.white" : "side.black");
+    if (!s[side].type) return t("setup.choosePlayer", { name });
+    if (acceptsModel(types, s[side].type) && $(`model-${side}`).value === OTHER && !$(`model-${side}-other`).value.trim()) return t("setup.typeModel", { name });
   }
   return "";
 }
@@ -152,8 +170,8 @@ function showHint() {
     const sent = match.sending && match.sending.to === match.players[side] ? Math.round((Date.now() - match.sending.since) / 1000) : null;
     const el = $(`who-${side}`).querySelector(".turn");
     el.textContent =
-      sent !== null ? `sending… ${sent}s`
-      : turn ? (match.askedAt ? (left !== null ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left` : `thinking… ${secs}s`) : match.startingUp ? "starting…" : "waiting for the player…")
+      sent !== null ? t("turn.sending", { secs: sent })
+      : turn ? (match.askedAt ? (left !== null ? t("turn.left", { time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` }) : t("turn.thinking", { secs })) : match.startingUp ? t("turn.starting") : t("turn.waiting"))
       : "";
     el.classList.toggle("low", turn && sent === null && left !== null && left <= 10);
   }
@@ -200,7 +218,7 @@ function fillSetup() {
     pick.value = known ? setup[side].model : OTHER;
     other.hidden = known;
     other.value = known ? "" : setup[side].model;
-    note.textContent = got === null ? "Loading the models\u2026" : got.reason ? `Showing a built-in list: ${got.reason}` : "";
+    note.textContent = got === null ? t("models.loading") : got.reason ? t("models.builtIn", { reason: got.reason }) : "";
   }
   $("versus").textContent = `${sideLabel(setup.w)}  vs  ${sideLabel(setup.b)}`;
   if (match) render(match);
@@ -226,7 +244,7 @@ async function init() {
   try {
     types = (await app.agents.types()).types;
   } catch (e) {
-    $("status").textContent = `Cannot start: ${e.message}`;
+    $("status").textContent = t("status.cannotStart", { message: e.message });
     return;
   }
   setup = load(store, types);
