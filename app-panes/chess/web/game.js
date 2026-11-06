@@ -54,6 +54,60 @@ export function moveList(chess) {
   return out.join(" ");
 }
 
+const FIGURINE = {
+  w: { K: "\u2654", Q: "\u2655", R: "\u2656", B: "\u2657", N: "\u2658" },
+  b: { K: "\u265A", Q: "\u265B", R: "\u265C", B: "\u265D", N: "\u265E" },
+};
+
+/** The moves as table rows: { no, w, b } with the SAN of each side (b is "" until Black has moved). */
+export function moveRows(chess) {
+  const sans = chess.history();
+  const rows = [];
+  for (let i = 0; i < sans.length; i += 2) rows.push({ no: i / 2 + 1, w: sans[i], b: sans[i + 1] ?? "" });
+  return rows;
+}
+
+/**
+ * One move in the pieces the pane styles apart: a figurine for the piece (the side's own colour), the capture
+ * mark, the check or mate mark, castling, and a promotion's figurine. kind is one of piece, cap, check, castle,
+ * promo, plain; color is "w" or "b".
+ */
+export function sanParts(san, color) {
+  const fig = FIGURINE[color];
+  const parts = [];
+  let rest = san;
+  const mark = /[+#]$/.exec(rest);
+  if (mark) rest = rest.slice(0, -1);
+  if (/^O-O(-O)?$/.test(rest)) {
+    parts.push({ text: rest, kind: "castle" });
+  } else {
+    const piece = /^[KQRBN]/.exec(rest);
+    if (piece) {
+      parts.push({ text: fig[piece[0]], kind: "piece" });
+      rest = rest.slice(1);
+    }
+    let plain = "";
+    const flush = () => {
+      if (plain) parts.push({ text: plain, kind: "plain" });
+      plain = "";
+    };
+    for (let i = 0; i < rest.length; i++) {
+      const c = rest[i];
+      if (c === "x") {
+        flush();
+        parts.push({ text: "x", kind: "cap" });
+      } else if (c === "=" && fig[rest[i + 1]]) {
+        flush();
+        parts.push({ text: "=" + fig[rest[i + 1]], kind: "promo" });
+        i++;
+      } else plain += c;
+    }
+    flush();
+  }
+  if (mark) parts.push({ text: mark[0], kind: "check" });
+  return parts;
+}
+
 export function newGame() {
   return new Chess();
 }

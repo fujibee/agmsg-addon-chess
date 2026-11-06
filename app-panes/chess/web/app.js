@@ -1,6 +1,6 @@
 import { connect } from "./agmsg-addon.js";
 import { createMatch, startingText, waitingHint } from "./match.js";
-import { moveList } from "./game.js";
+import { moveRows, sanParts } from "./game.js";
 import { createBoard3d, webglAvailable } from "./board3d.js";
 import { loadModels, optionText } from "./models.js";
 import { DEFAULT_LIMIT, LIMITS, acceptsModel, defaultSetup, edgeLabel, load, loadLimit, save, saveLimit, sideLabel, swapSides } from "./setup.js";
@@ -58,6 +58,45 @@ function renderFlat(m, board, last) {
   );
 }
 
+/** One move as styled pieces: the figurine, the capture and check marks, castling. */
+function sanCell(san, color, last) {
+  const td = document.createElement("td");
+  td.className = color + (last ? " last" : "");
+  if (!san) return td;
+  for (const p of sanParts(san, color)) {
+    const el = document.createElement("span");
+    el.className = p.kind;
+    el.textContent = p.text;
+    td.append(el);
+  }
+  return td;
+}
+
+/** The moves as a table: number, White, Black; the last move highlighted; scrolled to the newest. */
+function renderMoves(m) {
+  const rows = moveRows(m.chess);
+  const plies = m.chess.history().length;
+  const body = $("moves").querySelector("tbody");
+  body.replaceChildren(
+    ...rows.map((r, i) => {
+      const tr = document.createElement("tr");
+      const no = document.createElement("td");
+      no.className = "no";
+      no.textContent = String(r.no);
+      tr.append(no, sanCell(r.w, "w", plies === 2 * i + 1), sanCell(r.b, "b", plies === 2 * i + 2));
+      return tr;
+    }),
+  );
+  $("moves").scrollTop = $("moves").scrollHeight;
+}
+
+/** What the pane says while the side to move has not been told it is its turn and its player is still starting. */
+function startingLine(m) {
+  const side = m.chess.turn();
+  const who = side === "w" ? "White" : "Black";
+  return `Starting ${who} (${m.labels[side] || "player"})… waiting for it to finish starting`;
+}
+
 function renderText(m) {
   const idle = m.phase === "idle";
   const finished = m.phase === "over";
@@ -65,10 +104,11 @@ function renderText(m) {
   $("after").hidden = !(finished || m.phase === "error");
   $("rematch").hidden = !finished;
   $("swapcolours").hidden = !finished;
-  $("moves").textContent = moveList(m.chess);
+  renderMoves(m);
   const turn = m.chess.turn() === "w" ? m.players.w || "white" : m.players.b || "black";
   $("status").textContent =
     m.phase === "starting" ? startingText(m) || "Starting the players…"
+    : m.phase === "playing" && !m.askedAt && m.startingUp ? startingLine(m)
     : m.phase === "playing" ? `${turn} to move${m.problems ? ` · ${m.problems} refused` : ""}`
     : m.phase === "over" ? m.result
     : m.phase === "error" ? `Stopped: ${m.error}`
@@ -113,7 +153,7 @@ function showHint() {
     const el = $(`who-${side}`).querySelector(".turn");
     el.textContent =
       sent !== null ? `sending… ${sent}s`
-      : turn ? (match.askedAt ? (left !== null ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left` : `thinking… ${secs}s`) : "waiting for the player…")
+      : turn ? (match.askedAt ? (left !== null ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left` : `thinking… ${secs}s`) : match.startingUp ? "starting…" : "waiting for the player…")
       : "";
     el.classList.toggle("low", turn && sent === null && left !== null && left <= 10);
   }
@@ -195,6 +235,8 @@ async function init() {
     try {
       board3d = createBoard3d($("board"));
       $("board").classList.add("is-3d");
+      $("boardtools").hidden = false;
+      $("resetview").addEventListener("click", () => board3d.resetView());
     } catch (e) {
       board3d = null; // the flat board takes over
     }

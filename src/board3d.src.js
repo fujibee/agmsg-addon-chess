@@ -2,7 +2,7 @@
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   ACESFilmicToneMapping, AmbientLight, BoxGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, ExtrudeGeometry, Group,
-  HemisphereLight, LatheGeometry, Mesh, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, PlaneGeometry, Raycaster,
+  HemisphereLight, LatheGeometry, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, PlaneGeometry, Raycaster,
   Scene, Shape, SphereGeometry, SplineCurve, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, Color, Fog,
 } from "three";
 
@@ -133,11 +133,12 @@ export function createBoard3d(host) {
   renderer.domElement.style.height = "100%";
 
   const scene = new Scene();
-  scene.background = new Color(0x14161b);
-  scene.fog = new Fog(0x14161b, 16, 34);
+  // A mid-tone ground: the white pieces stand out from it as much as the dark ones do, in a light or a dark page.
+  scene.background = new Color(0x8b93a4);
+  scene.fog = new Fog(0x8b93a4, 16, 34);
   const camera = new PerspectiveCamera(36, 1, 0.1, 80);
 
-  scene.add(new HemisphereLight(0xdfe8ff, 0x2a2420, 0.7));
+  scene.add(new HemisphereLight(0xdfe8ff, 0x6a625a, 0.8));
   scene.add(new AmbientLight(0xffffff, 0.15));
   const sun = new DirectionalLight(0xfff1dc, 2.4);
   sun.position.set(-5, 11, 7);
@@ -151,7 +152,7 @@ export function createBoard3d(host) {
   scene.add(rim);
 
   // Table, frame, squares.
-  const table = new Mesh(new PlaneGeometry(60, 60), new MeshStandardMaterial({ color: 0x1c1e24, roughness: 0.95 }));
+  const table = new Mesh(new PlaneGeometry(60, 60), new MeshStandardMaterial({ color: 0x8b93a4, roughness: 0.95 }));
   table.rotation.x = -Math.PI / 2; table.position.y = -0.32; table.receiveShadow = true;
   scene.add(table);
   const frame = new Mesh(new BoxGeometry(9.2, 0.3, 9.2), new MeshStandardMaterial({ color: 0x4a2f1c, roughness: 0.55, metalness: 0.05 }));
@@ -172,7 +173,8 @@ export function createBoard3d(host) {
 
   const mats = {
     w: new MeshStandardMaterial({ color: 0xf1ead8, roughness: 0.32, metalness: 0.05 }),
-    b: new MeshStandardMaterial({ color: 0x25272e, roughness: 0.3, metalness: 0.2 }),
+    // Charcoal rather than black, with a glossy coat, so the shapes read from their highlights.
+    b: new MeshPhysicalMaterial({ color: 0x434a58, roughness: 0.24, metalness: 0.2, clearcoat: 0.9, clearcoatRoughness: 0.1 }),
     slit: new MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.6 }),
   };
   const pieces = new Group();
@@ -244,13 +246,17 @@ export function createBoard3d(host) {
     }
   }
 
-  // The view: a slow orbit that the user can take over by dragging; wheel zooms.
-  let yaw = 0.0, pitch = 0.9, dist = 15.5, idle = true, drag = null;
+  // The view: a slow turn that a drag stops; wheel zooms; resetView() brings back the first view and the turn.
+  const START = { yaw: 0.0, pitch: 0.9, dist: 15.5 };
+  let yaw = START.yaw, pitch = START.pitch, dist = START.dist, idle = true, drag = null;
   const target = new Vector3(0, 0.3, 0);
   function aim() {
-    camera.position.set(Math.sin(yaw) * Math.cos(pitch) * dist, Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist).add(target);
+    // A narrow pane would crop the sides of the board: stand further back as the view gets narrower than it is wide.
+    const d = dist * Math.max(1, 1.15 / camera.aspect);
+    camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d, Math.sin(pitch) * d, Math.cos(yaw) * Math.cos(pitch) * d).add(target);
     camera.lookAt(target);
   }
+  function resetView() { yaw = START.yaw; pitch = START.pitch; dist = START.dist; idle = true; }
   const el = renderer.domElement;
   el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; idle = false; el.setPointerCapture(e.pointerId); });
   el.addEventListener("pointermove", (e) => {
@@ -262,7 +268,7 @@ export function createBoard3d(host) {
   const end = () => { drag = null; };
   el.addEventListener("pointerup", end); el.addEventListener("pointercancel", end);
   el.addEventListener("wheel", (e) => { e.preventDefault(); dist = Math.min(22, Math.max(7, dist * (1 + Math.sign(e.deltaY) * 0.06))); }, { passive: false });
-  el.addEventListener("dblclick", () => { yaw = 0; pitch = 0.9; dist = 15.5; idle = true; });
+  el.addEventListener("dblclick", resetView);
 
   function resize() {
     const w = Math.max(host.clientWidth, 200), h = Math.max(host.clientHeight, 200);
@@ -274,11 +280,13 @@ export function createBoard3d(host) {
   new ResizeObserver(resize).observe(host);
   resize();
 
-  let running = true, raf = 0, t0 = performance.now();
+  let running = true, raf = 0, lastFrame = performance.now();
   function frame_() {
     if (!running) return;
     raf = requestAnimationFrame(frame_);
-    if (idle) yaw = Math.sin((performance.now() - t0) / 6000) * 0.28;
+    const now = performance.now();
+    if (idle) yaw += Math.min(0.1, (now - lastFrame) / 1000) * 0.12; // one full turn in about 52 s
+    lastFrame = now;
     step(performance.now());
     aim();
     renderer.render(scene, camera);
@@ -292,6 +300,7 @@ export function createBoard3d(host) {
   return {
     setPosition,
     renderOnce() { step(performance.now()); aim(); renderer.render(scene, camera); },
+    resetView,
     setView(v) { yaw = v.yaw ?? yaw; pitch = v.pitch ?? pitch; dist = v.dist ?? dist; idle = false; },
     dispose() { running = false; cancelAnimationFrame(raf); renderer.dispose(); },
   };

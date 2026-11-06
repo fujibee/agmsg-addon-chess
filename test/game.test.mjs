@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { legalUci, limitText, moveList, newGame, outcome, readUci, resultText, tryMove, turnPrompt } from "../app-panes/chess/web/game.js";
+import { legalUci, limitText, moveList, moveRows, newGame, outcome, readUci, resultText, sanParts, tryMove, turnPrompt } from "../app-panes/chess/web/game.js";
 
 test("readUci takes a bare move, a decorated one, and refuses the rest", () => {
   assert.deepEqual(readUci("e2e4"), { uci: "e2e4" });
@@ -65,4 +65,26 @@ test("the prompt states the time limit only when there is one, and says a retry 
   assert.match(turnPrompt(g, { limit: 120 }), /Time limit: reply within 2 minutes of receiving this message\. If it runs out you lose the game\./);
   assert.match(turnPrompt(g, { limit: 30, problem: "e7e8 is not legal" }), /within 30 seconds .*clock for this move keeps running/);
   assert.deepEqual([30, 60, 120, 300].map(limitText), ["30 seconds", "1 minute", "2 minutes", "5 minutes"]);
+});
+
+test("moves come as table rows: number, White, Black (Black empty until it has moved)", () => {
+  const g = newGame();
+  for (const uci of ["e2e4", "e7e5", "g1f3"]) tryMove(g, uci);
+  assert.deepEqual(moveRows(g), [{ no: 1, w: "e4", b: "e5" }, { no: 2, w: "Nf3", b: "" }]);
+  assert.deepEqual(moveRows(newGame()), []);
+});
+
+test("a move is split into the pieces the pane styles: figurine, capture, check, castling, promotion", () => {
+  const kinds = (san, c) => sanParts(san, c).map((p) => `${p.kind}:${p.text}`);
+  assert.deepEqual(kinds("e4", "w"), ["plain:e4"]);
+  assert.deepEqual(kinds("Nf3", "w"), ["piece:\u2658", "plain:f3"], "White's knight is the outline figurine");
+  assert.deepEqual(kinds("Nc6", "b"), ["piece:\u265E", "plain:c6"], "Black's knight is the filled one");
+  assert.deepEqual(kinds("Bxc6", "w"), ["piece:\u2657", "cap:x", "plain:c6"]);
+  assert.deepEqual(kinds("exd5", "b"), ["plain:e", "cap:x", "plain:d5"], "a pawn capture has no figurine");
+  assert.deepEqual(kinds("Qh5+", "w"), ["piece:\u2655", "plain:h5", "check:+"]);
+  assert.deepEqual(kinds("Qxf7#", "w"), ["piece:\u2655", "cap:x", "plain:f7", "check:#"]);
+  assert.deepEqual(kinds("O-O", "w"), ["castle:O-O"]);
+  assert.deepEqual(kinds("O-O-O+", "b"), ["castle:O-O-O", "check:+"]);
+  assert.deepEqual(kinds("e8=Q#", "w"), ["plain:e8", "promo:=\u2655", "check:#"]);
+  assert.deepEqual(kinds("Nbd7", "b"), ["piece:\u265E", "plain:bd7"], "disambiguation stays plain");
 });

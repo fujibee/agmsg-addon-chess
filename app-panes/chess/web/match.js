@@ -7,10 +7,12 @@ import { limitText, newGame, outcome, readUci, resultText, tryMove, turnPrompt }
  * the cause is not known from here. The game keeps waiting.
  */
 export function waitingHint(m, now = Date.now(), afterMs = 45000) {
-  if (m.phase !== "playing" || !m.askedAt || now - m.askedAt < afterMs) return "";
+  const since = m.askedAt || m.askStart;
+  if (m.phase !== "playing" || !since || now - since < afterMs) return "";
+  if (m.sending && m.sending.to === m.players?.[m.chess.turn()]) return ""; // its message has not even gone out yet
   const side = m.chess.turn() === "w" ? "White" : "Black";
-  const secs = Math.round((now - m.askedAt) / 1000);
-  return `${side} hasn't answered yet (${secs} s since the turn notice).`;
+  const secs = Math.round((now - since) / 1000);
+  return `${side} hasn't answered yet (${secs} s since ${m.askedAt ? "the turn notice" : "it was asked"}).`;
 }
 
 /**
@@ -70,6 +72,8 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     limit: 0, // seconds a side has for a move; 0 = no limit
     timed: false, // whether the move being played is timed
     askStart: 0, // when the side to move was asked, ms since epoch; a delivery report from before it is stale
+    startingUp: false, // the side to move is being asked for the first time since its pair started
+    askId: "", // the id of the message that carried this ask, once the feed showed it
     deadline: 0, // when the side to move runs out of time, ms since epoch; 0 = no deadline
     timedOut: "", // the side that lost on time
     labels: { w: "", b: "" }, // "claude-code · haiku", shown at each side of the board
@@ -100,6 +104,8 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
   let sends = Promise.resolve();
   let asks = 0;
   const settled = new Set(); // sides asked since their pair started: their panes are past startup
+  let askPending = null; // { to, body } of the ask whose message id has not been seen yet
+  const delivered = new Map(); // message id -> { name, at }: delivery reports that may come before the feed shows the message
   function startClock(at) {
     m.askedAt = at;
     m.deadline = m.timed ? at + m.limit * 1000 : 0;
@@ -119,9 +125,12 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
       m.askedAt = 0; // the clock starts once the turn notice is delivered, not while the player is still starting
       m.deadline = 0;
       m.askStart = Date.now();
+      m.startingUp = startingUp;
+      m.askId = "";
     }
     const to = m.players[side];
     const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me, limit: m.timed ? m.limit : 0 });
+    if (!m.askId) askPending = { to, body };
     const run = sends.then(async () => {
       m.sending = { to, since: Date.now() };
       if (fresh && mine === asks) {
@@ -131,23 +140,39 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
       onChange(m);
       try {
         await app.messages.send(to, body);
-        // Without a delivery report the send is the nearest moment there is.
-        if (mine === asks && m.askedAt === 0 && !delivers()) startClock(Date.now());
+        // Without a delivery report the send is the nearest moment there is, except for a side's first move: its
+        // pane may still be starting, so nothing is counted until it answers.
+        if (mine === asks && m.askedAt === 0 && !delivers() && !m.startingUp) startClock(Date.now());
       } finally {
         m.sending = null;
       }
+      onChange(m);
     });
     sends = run.catch(() => {});
     return run;
   }
 
-  /** The app typed a turn notice into `name`'s pane at `at` (ms since epoch): that side's clock starts. */
-  m.onNotice = ({ name, at } = {}) => {
-    if (!delivers() || m.phase !== "playing" || m.askedAt !== 0) return;
+  /** The clock of the side to move starts, if this is the notice for the current ask. */
+  function deliver(name, at) {
+    if (m.phase !== "playing" || m.askedAt !== 0 || !m.askId) return;
     if (!name || name !== m.players[m.chess.turn()]) return;
     if (Number.isFinite(at) && at < m.askStart) return; // a report from before this ask is about an earlier notice
     startClock(Number.isFinite(at) ? at : Date.now());
     onChange(m);
+  }
+
+  /**
+   * The app typed a notice about the messages `ids` into `name`'s pane at `at` (ms since epoch). It starts that
+   * side's clock only if one of them is the message that carried the current ask; the report may come before the
+   * feed shows that message, so it is kept for a while.
+   */
+  m.onNotice = ({ name, at, ids } = {}) => {
+    if (!delivers() || !Array.isArray(ids)) return;
+    for (const id of ids) {
+      delivered.set(id, { name, at });
+      if (delivered.size > 50) delivered.delete(delivered.keys().next().value);
+    }
+    if (m.askId && ids.includes(m.askId)) deliver(name, at);
   };
 
   /** Looked at every second: the side to move loses when its time for the move has run out. */
@@ -214,6 +239,9 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     m.timedOut = "";
     m.askedAt = 0;
     m.deadline = 0;
+    m.startingUp = false;
+    m.askId = "";
+    askPending = null;
     m.log = [];
     introduced.clear();
     m.again = true;
@@ -255,6 +283,14 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
   };
 
   m.onMessage = async (msg) => {
+    // The feed also shows the add-on's own messages: this is how the ask learns its message id.
+    if (msg.from === m.me && askPending && !m.askId && msg.to === askPending.to && msg.body === askPending.body) {
+      m.askId = msg.id;
+      askPending = null;
+      const d = delivered.get(msg.id);
+      if (d) deliver(d.name, d.at);
+      return;
+    }
     if (m.phase === "over" && m.timedOut && msg.to === m.me && msg.from === m.players[m.timedOut] && !seen.has(msg.id)) {
       seen.add(msg.id);
       say(`${msg.from}: ignored a reply that came after the time ran out`);

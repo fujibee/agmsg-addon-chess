@@ -287,30 +287,35 @@ test("a second send waits for the first: the reply to a slow send is played at o
   assert.deepEqual(events, ["start white", "end white", "start black"]);
   assert.equal(m.sending.to, "black");
   assert.equal(m.askedAt, 0, "white's late send finishing does not start black's count");
-  assert.equal(waitingHint(m, Date.now() + 60_000), "", "so no hint about black while its notice is still going out");
+  assert.equal(waitingHint(m, Date.now() + 60_000), "", "so no hint about black while its message is still going out");
   pending[1]();
   await Promise.all([started, replied]);
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(m.sending, null);
-  assert.ok(m.askedAt > 0, "black's count starts when black's own notice is delivered");
+  assert.equal(m.askedAt, 0, "black's first move is not counted: its pane may still be starting");
+  assert.match(waitingHint(m, Date.now() + 60_000), /^Black hasn't answered yet \(\d+ s since it was asked\)\.$/, "but a quiet black is still noticed, once its message went out");
 });
 
-test("the thinking count starts when the turn notice is delivered, not while it is being sent", async () => {
+test("without delivery reports, a side's first move is not counted at all; the next move is counted from its send", async () => {
   let release;
   const gate = new Promise((r) => (release = r));
-  const seen = [];
+  const sent = [];
   const app = {
     team: { join: async () => ({ name: "chess" }) },
     agents: { spawn: async (type, name) => ({ name, type, state: "running" }) },
-    messages: { send: async () => gate },
+    messages: { send: async (to, body) => { sent.push({ to, body }); return sent.length === 1 ? gate : { to }; } },
   };
-  const m = createMatch({ app, onChange: (x) => seen.push({ askedAt: x.askedAt, sending: !!x.sending }) });
+  const m = createMatch({ app });
   const started = m.start("claude-code");
   while (!m.sending) await new Promise((r) => setTimeout(r, 5));
   assert.equal(m.askedAt, 0, "no count while the notice is still going out");
   release({});
   await started;
-  assert.ok(m.askedAt > 0, "the count starts once the notice was delivered");
+  assert.equal(m.askedAt, 0, "nor after it went out: the first move of a side is its startup");
+  assert.equal(m.startingUp, true);
+  await m.onMessage({ id: "r1", from: "white", to: "chess", body: "e2e4" });
+  await m.onMessage({ id: "r2", from: "black", to: "chess", body: "e7e5" });
+  assert.ok(m.askedAt > 0, "white's second move is counted from its send");
 });
 
 // A referee with players that never answer by themselves: the test plays both sides' replies.
@@ -323,89 +328,11 @@ function quietApp() {
   };
   let n = 0;
   const reply = (m, from, body) => m.onMessage({ id: `r${++n}`, from, to: "chess", body });
-  return { app, sent, reply };
+  // The feed shows the add-on its own ask (this is how it learns the message id), and the app reports it typed.
+  const fed = (m, index, id = `a${index}`) => m.onMessage({ id, from: "chess", to: sent[index].to, body: sent[index].body });
+  const typed = (m, name, at, ids) => m.onNotice({ name, at, ids });
+  return { app, sent, reply, fed, typed };
 }
-
-test("with delivery reports, a side's clock starts at its notice and running out loses", async () => {
-  const q = quietApp();
-  const m = createMatch({ app: q.app, delivery: true });
-  m.limit = 120;
-  await m.start("claude-code");
-  assert.equal(m.askedAt, 0, "sending is not delivery");
-  assert.equal(m.tick(Date.now() + 10 * 60_000), false, "no clock, no loss");
-  const t = Date.now() + 5000;
-  m.onNotice({ name: "black", at: t });
-  assert.equal(m.askedAt, 0, "a notice for the side not to move is ignored");
-  m.onNotice({ name: "white", at: t });
-  assert.equal(m.askedAt, t);
-  assert.equal(m.deadline, t + 120_000);
-  m.onNotice({ name: "white", at: t + 4000 });
-  assert.equal(m.askedAt, t, "a second notice does not move the clock");
-  assert.match(q.sent[0].body, /Time limit: reply within 2 minutes/);
-  assert.equal(m.tick(t + 120_000 - 1), false);
-  assert.equal(m.tick(t + 120_000), true);
-  assert.equal(m.phase, "over");
-  assert.equal(m.result, "White lost on time (no move within 2 minutes).");
-  await q.reply(m, "white", "e2e4");
-  assert.equal(m.chess.history().length, 0, "a reply after the time ran out is not played");
-  assert.ok(m.log.some((l) => /ignored a reply that came after the time ran out/.test(l)));
-  assert.equal(m.tick(Date.now() + 1e9), false, "the game is over; nothing more to lose");
-});
-
-test("a retry keeps the move's clock; the next move starts a new one", async () => {
-  const q = quietApp();
-  const m = createMatch({ app: q.app, delivery: true });
-  m.limit = 60;
-  await m.start("claude-code");
-  const t = Date.now() + 1000;
-  m.onNotice({ name: "white", at: t });
-  await q.reply(m, "white", "nonsense");
-  assert.equal(m.problems, 1);
-  assert.equal(m.askedAt, t, "asking again does not restart the clock");
-  assert.equal(m.deadline, t + 60_000);
-  assert.match(q.sent.at(-1).body, /clock for this move keeps running/);
-  m.onNotice({ name: "white", at: t + 3000 });
-  assert.equal(m.askedAt, t, "the retry's notice does not restart it either");
-  await q.reply(m, "white", "e2e4");
-  assert.equal(m.askedAt, 0, "black's move has no clock until its notice is delivered");
-  assert.equal(m.deadline, 0);
-  const u = Date.now() + 8000;
-  m.onNotice({ name: "black", at: u });
-  assert.equal(m.deadline, u + 60_000);
-});
-
-test("without delivery reports the first move of each side is untimed and says so; later moves run from the send", async () => {
-  const q = quietApp();
-  const m = createMatch({ app: q.app, delivery: false });
-  m.limit = 120;
-  await m.start("claude-code");
-  assert.equal(m.deadline, 0);
-  assert.ok(m.askedAt > 0, "the count still starts at the send");
-  assert.doesNotMatch(q.sent[0].body, /Time limit/);
-  assert.ok(m.log.includes("White: no time limit on the first move (this app cannot report delivery)"));
-  await q.reply(m, "white", "e2e4");
-  assert.equal(m.deadline, 0, "black's first move is untimed too");
-  assert.ok(m.log.includes("Black: no time limit on the first move (this app cannot report delivery)"));
-  await q.reply(m, "black", "e7e5");
-  assert.ok(m.deadline > 0, "white's second move is timed from its send");
-  assert.equal(m.deadline, m.askedAt + 120_000);
-  assert.match(q.sent.at(-1).body, /Time limit: reply within 2 minutes/);
-  assert.equal(m.tick(m.deadline), true);
-});
-
-test("no limit means no clock, no notice line and no limit in the prompt", async () => {
-  const q = quietApp();
-  const m = createMatch({ app: q.app, delivery: true });
-  m.limit = 0;
-  await m.start("claude-code");
-  const t = Date.now() + 1000;
-  m.onNotice({ name: "white", at: t });
-  assert.equal(m.askedAt, t);
-  assert.equal(m.deadline, 0);
-  assert.doesNotMatch(q.sent[0].body, /Time limit/);
-  assert.equal(m.tick(Date.now() + 1e9), false);
-  assert.equal(m.log.some((l) => /no time limit/.test(l)), false);
-});
 
 // Runs `fn` with Date.now() fixed, restoring it afterwards.
 async function at(ms, fn) {
@@ -418,13 +345,145 @@ async function at(ms, fn) {
   }
 }
 
+test("with delivery reports, a side's clock starts at the notice for its ask, and running out loses", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: true });
+  m.limit = 120;
+  await m.start("claude-code");
+  assert.equal(m.askedAt, 0, "sending is not delivery");
+  assert.equal(m.startingUp, true);
+  assert.equal(m.tick(Date.now() + 10 * 60_000), false, "no clock, no loss");
+  const t = Date.now() + 5000;
+  await q.fed(m, 0);
+  assert.equal(m.askId, "a0", "the feed told the ask its message id");
+  q.typed(m, "black", t, ["a0"]);
+  assert.equal(m.askedAt, 0, "a notice for the side not to move is ignored");
+  q.typed(m, "white", t, ["some-other-message"]);
+  assert.equal(m.askedAt, 0, "a notice about another message is not this ask's");
+  q.typed(m, "white", t, ["a0"]);
+  assert.equal(m.askedAt, t);
+  assert.equal(m.deadline, t + 120_000);
+  q.typed(m, "white", t + 4000, ["a0"]);
+  assert.equal(m.askedAt, t, "a second report does not move the clock");
+  assert.match(q.sent[0].body, /Time limit: reply within 2 minutes/);
+  assert.equal(m.tick(t + 120_000 - 1), false);
+  assert.equal(m.tick(t + 120_000), true);
+  assert.equal(m.result, "White lost on time (no move within 2 minutes).");
+  await q.reply(m, "white", "e2e4");
+  assert.equal(m.chess.history().length, 0, "a reply after the time ran out is not played");
+  assert.ok(m.log.some((l) => /ignored a reply that came after the time ran out/.test(l)));
+});
+
+test("the report may come before the feed shows the ask; the clock starts as soon as both are known", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: true });
+  m.limit = 60;
+  await m.start("claude-code");
+  const t = Date.now() + 1000;
+  q.typed(m, "white", t, ["a0"]);
+  assert.equal(m.askedAt, 0, "the ask's id is not known yet");
+  await q.fed(m, 0);
+  assert.equal(m.askedAt, t);
+  assert.equal(m.deadline, t + 60_000);
+});
+
+test("a report older than the ask does not start the clock", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: true });
+  m.limit = 60;
+  await m.start("claude-code");
+  await q.fed(m, 0);
+  q.typed(m, "white", m.askStart - 1, ["a0"]);
+  assert.equal(m.askedAt, 0);
+  q.typed(m, "white", m.askStart + 1, ["a0"]);
+  assert.equal(m.askedAt, m.askStart + 1);
+});
+
+test("a first move can be answered before any delivery report, and stays untimed", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: true });
+  m.limit = 30;
+  await m.start("claude-code");
+  await q.fed(m, 0);
+  assert.equal(m.startingUp, true);
+  await q.reply(m, "white", "e2e4"); // the player read its inbox during its startup turn
+  assert.deepEqual(m.chess.history(), ["e4"]);
+  assert.equal(m.phase, "playing");
+  assert.equal(m.tick(Date.now() + 1e9), false, "no clock was running, so none ran out");
+  q.typed(m, "white", Date.now() + 1, ["a0"]); // the report for the answered ask arrives late: nothing to start
+  assert.equal(m.askedAt, 0, "black is the side to move now and has its own ask");
+});
+
+test("a retry keeps the move's clock; the next move starts a new one", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: true });
+  m.limit = 60;
+  await m.start("claude-code");
+  await q.fed(m, 0);
+  const t = Date.now() + 1000;
+  q.typed(m, "white", t, ["a0"]);
+  await q.reply(m, "white", "nonsense");
+  assert.equal(m.problems, 1);
+  assert.equal(m.askedAt, t, "asking again does not restart the clock");
+  assert.equal(m.deadline, t + 60_000);
+  assert.match(q.sent.at(-1).body, /clock for this move keeps running/);
+  await q.fed(m, 1);
+  q.typed(m, "white", t + 3000, ["a1"]);
+  assert.equal(m.askedAt, t, "the retry's notice does not restart it either");
+  await q.reply(m, "white", "e2e4");
+  assert.equal(m.askedAt, 0, "black's move has no clock until its notice is delivered");
+  assert.equal(m.deadline, 0);
+  await q.fed(m, 2);
+  const u = Date.now() + 8000;
+  q.typed(m, "black", u, ["a2"]);
+  assert.equal(m.deadline, u + 60_000);
+});
+
+test("without delivery reports a side's first move is untimed, shows starting, counts nothing, and says so", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: false });
+  m.limit = 120;
+  await m.start("claude-code");
+  assert.equal(m.deadline, 0);
+  assert.equal(m.askedAt, 0, "nothing is counted while the player may still be starting");
+  assert.equal(m.startingUp, true);
+  assert.doesNotMatch(q.sent[0].body, /Time limit/);
+  assert.ok(m.log.includes("White: no time limit on the first move (this app cannot report delivery)"));
+  await q.reply(m, "white", "e2e4");
+  assert.equal(m.deadline, 0, "black's first move is untimed too");
+  assert.equal(m.askedAt, 0);
+  assert.ok(m.log.includes("Black: no time limit on the first move (this app cannot report delivery)"));
+  await q.reply(m, "black", "e7e5");
+  assert.equal(m.startingUp, false);
+  assert.ok(m.askedAt > 0, "white's second move is counted from its send");
+  assert.equal(m.deadline, m.askedAt + 120_000);
+  assert.match(q.sent.at(-1).body, /Time limit: reply within 2 minutes/);
+  assert.equal(m.tick(m.deadline), true);
+});
+
+test("no limit means no clock, no notice line and no limit in the prompt", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: true });
+  m.limit = 0;
+  await m.start("claude-code");
+  await q.fed(m, 0);
+  const t = Date.now() + 1000;
+  q.typed(m, "white", t, ["a0"]);
+  assert.equal(m.askedAt, t);
+  assert.equal(m.deadline, 0);
+  assert.doesNotMatch(q.sent[0].body, /Time limit/);
+  assert.equal(m.tick(Date.now() + 1e9), false);
+  assert.equal(m.log.some((l) => /no time limit/.test(l)), false);
+});
+
 test("a reply received after the deadline loses even before the display timer looks", async () => {
   const q = quietApp();
   const m = createMatch({ app: q.app, delivery: true });
   m.limit = 30;
   await at(1_000_000, async () => {
     await m.start("claude-code");
-    m.onNotice({ name: "white", at: 1_000_000 });
+    await q.fed(m, 0);
+    q.typed(m, "white", 1_000_000, ["a0"]);
     assert.equal(m.deadline, 1_030_000);
   });
   await at(1_030_001, () => q.reply(m, "white", "e2e4"));
@@ -441,7 +500,8 @@ test("the deadline itself is late; one millisecond before is in time", async () 
     m.limit = 30;
     await at(1_000_000, async () => {
       await m.start("claude-code");
-      m.onNotice({ name: "white", at: 1_000_000 });
+      await q.fed(m, 0);
+      q.typed(m, "white", 1_000_000, ["a0"]);
     });
     await at(receivedAt, () => q.reply(m, "white", "e2e4"));
     return m;
@@ -454,17 +514,10 @@ test("the deadline itself is late; one millisecond before is in time", async () 
   assert.equal(late.chess.history().length, 0);
 });
 
-test("a delivery report from before the ask, or for the other side, does not start the clock", async () => {
-  const q = quietApp();
-  const m = createMatch({ app: q.app, delivery: true });
-  m.limit = 60;
-  await at(2_000_000, async () => {
-    await m.start("claude-code");
-    m.onNotice({ name: "white", at: 1_999_999 });
-    assert.equal(m.askedAt, 0, "stale: reported before white was asked");
-    m.onNotice({ name: "black", at: 2_000_005 });
-    assert.equal(m.askedAt, 0, "not for the side to move");
-    m.onNotice({ name: "white", at: 2_000_005 });
-    assert.equal(m.askedAt, 2_000_005);
-  });
+test("waitingHint says it was asked, not delivered, when no notice was reported", async () => {
+  const { waitingHint } = await import("../app-panes/chess/web/match.js");
+  const m = { phase: "playing", chess: newGame(), askedAt: 0, askStart: 1000 };
+  assert.equal(waitingHint(m, 1000 + 10_000), "");
+  assert.match(waitingHint(m, 1000 + 60_000), /^White hasn't answered yet \(60 s since it was asked\)\.$/);
+  assert.match(waitingHint({ ...m, askedAt: 2000 }, 2000 + 60_000), /\(60 s since the turn notice\)/);
 });
