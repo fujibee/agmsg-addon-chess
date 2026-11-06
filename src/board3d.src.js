@@ -1,5 +1,6 @@
 // The 3D board. Built into app-panes/chess/web/board3d.js (see package.json "build"); three.js is bundled, nothing is fetched.
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { framing } from "./view.js";
 import {
   ACESFilmicToneMapping, AmbientLight, BoxGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, ExtrudeGeometry, Group,
   HemisphereLight, LatheGeometry, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, PlaneGeometry, Raycaster,
@@ -251,8 +252,11 @@ export function createBoard3d(host) {
   let yaw = START.yaw, pitch = START.pitch, dist = START.dist, idle = true, drag = null;
   const target = new Vector3(0, 0.3, 0);
   function aim() {
-    // A narrow pane would crop the sides of the board: stand further back as the view gets narrower than it is wide.
-    const d = dist * Math.max(1, 1.15 / camera.aspect);
+    // A narrow pane stands further back; the fog and the far plane move back with it, or the board would sit in the fog.
+    const f = framing(dist, camera.aspect);
+    const d = f.d;
+    if (scene.fog.near !== f.fogNear) { scene.fog.near = f.fogNear; scene.fog.far = f.fogFar; }
+    if (camera.far !== f.far) { camera.far = f.far; camera.updateProjectionMatrix(); }
     camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d, Math.sin(pitch) * d, Math.cos(yaw) * Math.cos(pitch) * d).add(target);
     camera.lookAt(target);
   }

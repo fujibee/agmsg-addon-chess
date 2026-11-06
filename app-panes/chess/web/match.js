@@ -107,6 +107,8 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
   let asks = 0;
   const settled = new Set(); // sides asked since their pair started: their panes are past startup
   let askPending = null; // { to, body } of the ask whose message id has not been seen yet
+  const runToken = Math.random().toString(36).slice(2, 10); // tells this match's asks from any earlier match's
+  let askCount = 0;
   const delivered = new Map(); // message id -> { name, at }: delivery reports that may come before the feed shows the message
   function startClock(at) {
     m.askedAt = at;
@@ -131,7 +133,9 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
       m.askId = "";
     }
     const to = m.players[side];
-    const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me, limit: m.timed ? m.limit : 0 });
+    // Each ask carries its own reference, so a late echo of an earlier ask (an earlier game's, with the same
+    // position and the same player) can never be taken for this one.
+    const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me, limit: m.timed ? m.limit : 0, ref: `${runToken}-${++askCount}` });
     if (!m.askId) askPending = { to, body };
     const run = sends.then(async () => {
       m.sending = { to, since: Date.now() };

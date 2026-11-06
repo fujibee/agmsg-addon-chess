@@ -541,3 +541,32 @@ test("every reply that was not played is kept with the move, who sent it and why
   assert.equal(m.refusals.at(-1).ply, 2);
   assert.equal(m.refusals.length, 3);
 });
+
+test("a late echo or report from an earlier game is never taken for the current ask, rematch after rematch", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: true });
+  m.limit = 30;
+  await m.start("claude-code");
+  const fools = [["white", "f2f3"], ["black", "e7e5"], ["white", "g2g4"], ["black", "d8h4"]];
+  for (let game = 1; game <= 3; game++) {
+    if (game > 1) await m.rematch();
+    const current = q.sent.length - 1;
+    // Late echoes of the earlier games' asks arrive BEFORE the current ask's own echo. The position and the player
+    // are the same in every game, so an ask that went by position and text alone would take one of them for this ask.
+    const stale = q.sent.slice(0, current).map((_, i) => i).filter((i) => q.sent[i].to === q.sent[current].to);
+    for (const i of stale) await m.onMessage({ id: `old${game}-${i}`, from: "chess", to: q.sent[i].to, body: q.sent[i].body });
+    assert.equal(m.askId, "", "no old echo became the current ask's id");
+    m.onNotice({ name: "white", at: Date.now() + 5, ids: stale.map((i) => `old${game}-${i}`) });
+    assert.equal(m.askedAt, 0, "no old report started the clock");
+    // then the current ask's echo and report, as they should be
+    await m.onMessage({ id: `echo${game}`, from: "chess", to: q.sent[current].to, body: q.sent[current].body });
+    assert.equal(m.askId, `echo${game}`);
+    const t = Date.now() + 10;
+    m.onNotice({ name: "white", at: t, ids: [`echo${game}`] });
+    assert.equal(m.askedAt, t, "the real report did");
+    for (const [side, uci] of fools) await q.reply(m, side, uci);
+    assert.equal(m.phase, "over");
+    assert.match(m.result, /Checkmate/, `game ${game} ended by mate, not by the clock`);
+    assert.equal(m.timedOut, "");
+  }
+});

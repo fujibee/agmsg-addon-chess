@@ -122,7 +122,7 @@ export function limitText(seconds) {
 }
 
 /** The text sent to the side to move. */
-export function turnPrompt(chess, { first = false, problem = "", again = false, referee = "chess", limit = 0 } = {}) {
+export function turnPrompt(chess, { first = false, problem = "", again = false, referee = "chess", limit = 0, ref = "" } = {}) {
   const side = SIDE[chess.turn()];
   const lines = [];
   if (first) lines.push(`You are playing ${side} in ${again ? "a new game" : "a game"} of chess. A referee keeps the board and sends you the position each turn.${again ? " Forget the positions and moves of any earlier game." : ""}`);
@@ -131,6 +131,7 @@ export function turnPrompt(chess, { first = false, problem = "", again = false, 
   lines.push(`Moves so far: ${moveList(chess) || "none"}`);
   lines.push(`Send your move back to ${referee} as an agmsg message whose body is one move in UCI (for example e2e4, or e7e8q for a promotion) and nothing else. Writing it in your own pane does not count: ${referee} only reads messages sent to it.`);
   if (limit > 0) lines.push(`Time limit: reply within ${limitText(limit)} of receiving this message${problem ? " (the clock for this move keeps running)" : ""}. If it runs out you lose the game.`);
+  if (ref) lines.push(`Request: ${ref}`); // makes every ask a different message, so an old ask is never taken for this one
   return lines.join("\n");
 }
 
