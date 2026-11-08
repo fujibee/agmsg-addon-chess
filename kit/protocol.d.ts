@@ -39,6 +39,38 @@ export interface NoticeEvent {
   ids: string[];
 }
 
+/**
+ * Sent BY the add-on over the port when its page hit an error: the app writes one line to its log
+ * (`[addons] <addon> pane error: <message> | <stack>`). The SDK sends it by itself for every error it shows in the
+ * overlay (at most 20 per load, each message once, message cut to 500 characters and stack to 2000). Wrap
+ * callbacks the browser calls (observers, timers, frames, events) in the SDK's `guard(fn)` so their errors carry a
+ * real message and stack; a sandboxed page otherwise sees only "Script error.". Never answered.
+ */
+export interface ErrorReport {
+  agmsg: 1;
+  type: "error";
+  message: string;
+  stack?: string;
+}
+
+/**
+ * The app's language, pushed over the pane's port to every add-on (no permission needed): once right after the
+ * port is handed over, and again each time the user changes the app's language. Only the tag; nothing else
+ * about the user or the machine. `locale` is one of the app's languages: en, ja, zh-CN, zh-TW, ko, es, fr, de,
+ * pt-BR. The SDK exposes it as `app.locale`, `app.localeReady` and `app.onLocaleChange(cb)`.
+ */
+export interface LocaleEvent {
+  agmsg: 1;
+  type: "locale";
+  locale: string;
+}
+
+/**
+ * The best of `supported` for `tag`: an exact match, then the language alone (pt-BR -> pt) when listed, else
+ * `fallback` (default "en"). Exported by the SDK as `pickLocale`.
+ */
+export type PickLocale = (tag: string | undefined, supported: readonly string[] | undefined, fallback?: string) => string;
+
 export interface OpenArgs {
   path?: string;
   url?: string;
@@ -231,7 +263,7 @@ export interface TeamJoinResult {
 
 /** messages.send: one message from the add-on's member. Not de-duplicated: a retried send is a second message. */
 export interface SendRequest {
-  /** A member name of the granted team, or "all". */
+  /** A member name of the granted team. */
   to: string;
   body: string;
 }
@@ -251,6 +283,46 @@ export interface AgentTypes {
   types: SpawnableType[];
 }
 
+/** agents.models: the model choices for one CLI type, as the CLI's own /model offers them. */
+export interface ModelsRequest {
+  /** One of the `type`s agents.types lists. */
+  type: string;
+}
+
+export interface EffortOption {
+  /** The value to pass as the effort. */
+  id: string;
+  description: string;
+}
+
+export interface ModelChoice {
+  /** The value to pass as `model` in agents.spawn. */
+  id: string;
+  name: string;
+  description: string;
+  /** The CLI's own default model. */
+  isDefault: boolean;
+  /** The effort used when none is chosen; null when the list does not say. */
+  defaultEffort: string | null;
+  /** The efforts this model takes (they differ per model). */
+  efforts: EffortOption[];
+}
+
+/**
+ * agents.models answer. `source` says where the list came from:
+ *  - app-server: Codex itself answered (read once per app run; a failed read is not repeated for a minute)
+ *  - fixed:      a list the app keeps (Claude Code has no way to be asked)
+ *  - fallback:   Codex could not be asked; a stand-in list is returned and `reason` says why (plain text)
+ *  - none:       the type has no model list; `models` is empty
+ * Needs the same grant as agents.spawn (agents:spawn); there is no separate permission.
+ */
+export interface ModelList {
+  type: string;
+  source: "app-server" | "fixed" | "fallback" | "none";
+  reason?: string;
+  models: ModelChoice[];
+}
+
 /** agents.spawn */
 export interface SpawnRequest {
   type: string;
@@ -260,6 +332,12 @@ export interface SpawnRequest {
   folder?: string;
   /** Passed to the type's model option after validation. Omitted: the type's default. */
   model?: string;
+  /**
+   * A reasoning effort. Only an id that agents.models lists for the chosen model (`model`, else the list's default model)
+   * is accepted; anything else is `bad_args` and nothing starts. Omitted: the CLI's own default. A type without a
+   * model list takes none.
+   */
+  effort?: string;
 }
 
 /**
@@ -269,7 +347,7 @@ export interface SpawnRequest {
  *  - running:  the pane is open; `pid` is the CLI's process id
  *  - failed:   see `reason`
  *  - orphaned: the app restarted while it ran and the process is still alive (`pid`); the app does not reopen it
- *  - unknown:  the app stopped while the pane was starting; the app does not reopen it until the user chooses
+ *  - unknown:  the pane may be running or may still start (it did not report in time, or the app stopped while it was starting); the app does not reopen it until the user chooses
  */
 export type AgentState = "joined" | "opening" | "running" | "failed" | "orphaned" | "unknown";
 

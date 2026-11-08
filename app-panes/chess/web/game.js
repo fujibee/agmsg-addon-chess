@@ -145,3 +145,32 @@ export function resultText(o) {
     default: return t("end.default");
   }
 }
+
+/** "1:05" for 65 000 ms; "10 s" style is for the callers that want seconds only. */
+export function clockText(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/**
+ * The end-of-game table: per side the move count, the total, average and longest reply time (ms, from the turn
+ * notice reaching the player to its move arriving) and the illegal replies. A move whose notice was never reported
+ * has no time (null in `replies`): it is counted as a move but left out of the times, and a side with no timed move
+ * has null times ("—"), never a guess.
+ */
+export function replyStats(replies, refusals) {
+  const rows = {};
+  for (const side of ["w", "b"]) {
+    const all = replies[side] || [];
+    const timed = all.filter((x) => typeof x === "number");
+    const total = timed.reduce((a, b) => a + b, 0);
+    rows[side] = {
+      moves: all.length,
+      total: timed.length ? total : null,
+      avg: timed.length ? Math.round(total / timed.length) : null,
+      longest: timed.length ? Math.max(...timed) : null,
+      illegal: (refusals || []).filter((r) => r.side === side).length,
+    };
+  }
+  return rows;
+}

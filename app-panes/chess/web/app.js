@@ -1,6 +1,6 @@
-import { connect } from "./agmsg-addon.js";
+import { connect, guard } from "./agmsg-addon.js";
 import { createMatch, startingText, waitingHint } from "./match.js";
-import { moveRows, sanParts } from "./game.js";
+import { clockText, moveRows, replyStats, sanParts } from "./game.js";
 import { t } from "./strings.js";
 import { createBoard3d, webglAvailable } from "./board3d.js";
 import { loadModels, optionText } from "./models.js";
@@ -11,8 +11,11 @@ const PIECE = {
   bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟",
 };
 const $ = (id) => document.getElementById(id);
+// Every callback the browser calls goes through guard, so an error in it shows its own message and stack (and reaches the app's log).
+const on = (el, ev, fn) => el.addEventListener(ev, guard(fn));
 
 let match = null;
+let initSeen = false; // the app told us its features (init), so the old-app note is not shown too early
 let board3d = null;
 let types = [];
 let setup = defaultSetup([]);
@@ -27,7 +30,10 @@ const store = (() => {
 
 const app = connect({
   sample: false,
-  onInit() {},
+  onInit() {
+    initSeen = true;
+    if (match) render(match);
+  },
   onMessage(message) {
     if (match) void match.onMessage(message);
   },
@@ -91,20 +97,43 @@ function renderMoves(m) {
   $("moves").scrollTop = $("moves").scrollHeight;
 }
 
-/** "N illegal moves", opening to which replies were not played and why; stays open while the game goes on. */
-function renderRefusals(m) {
-  const box = $("refusals");
+let tab = "moves";
+let seenIllegal = 0;
+
+function selectTab(name) {
+  tab = name;
+  for (const n of ["moves", "illegal", "log"]) {
+    $(`tab-${n}`).setAttribute("aria-selected", String(n === name));
+    $(n).hidden = n !== name;
+  }
+  if (name === "illegal") seenIllegal = match ? match.refusals.length : 0;
+  $("tab-illegal").classList.remove("bump");
+  if (name === "moves") $("moves").scrollTop = $("moves").scrollHeight;
+  if (name === "log") $("log").scrollTop = $("log").scrollHeight;
+}
+
+/** The strip under the board: the moves, the replies that were not played and why, and the pane's log. */
+function renderInfo(m) {
+  $("info").hidden = m.phase === "idle";
   const n = m.refusals.length;
-  box.hidden = n === 0;
-  if (n === 0) return;
-  box.querySelector("summary").textContent = n === 1 ? t("illegal.one") : t("illegal.other", { n });
-  box.querySelector("ul").replaceChildren(
+  if (n < seenIllegal) seenIllegal = 0; // a new game
+  const t_ = $("tab-illegal");
+  t_.hidden = n === 0;
+  t_.textContent = t("tab.illegal", { n });
+  if (n === 0 && tab === "illegal") selectTab("moves");
+  t_.classList.toggle("bump", tab !== "illegal" && n > seenIllegal);
+  if (tab === "illegal") seenIllegal = n;
+  $("tab-moves").textContent = t("tab.moves");
+  $("tab-log").textContent = t("tab.log");
+  $("illegal").replaceChildren(
     ...m.refusals.map((r) =>
       Object.assign(document.createElement("li"), {
         textContent: t("illegal.item", { ply: r.ply, side: t(r.side === "w" ? "side.white" : "side.black"), text: r.text, reason: r.reason }),
       }),
     ),
   );
+  $("log").replaceChildren(...m.log.slice(-30).map((line) => Object.assign(document.createElement("li"), { textContent: line })));
+  if (tab === "log") $("log").scrollTop = $("log").scrollHeight;
 }
 
 /** What the pane says while the side to move has not been told it is its turn and its player is still starting. */
@@ -114,25 +143,89 @@ function startingLine(m) {
   return t("status.startingLine", { side: who, label: m.labels[side] || t("player") });
 }
 
+/** Fixed labels from the strings table (the HTML holds the English text as its first paint). */
+function labelStatic() {
+  const set = (id, key) => { $(id).textContent = t(key); };
+  set("swap", "btn.swap");
+  $("swap").title = t("btn.swap.title");
+  $("swap").setAttribute("aria-label", t("btn.swap"));
+  set("resetview", "btn.reset");
+  set("rematch", "btn.again");
+  set("swapcolours", "btn.swapAgain");
+  set("tryagain", "btn.retry");
+  set("change", "btn.change");
+  set("camhint", "hint.camera");
+  $("rematch").nextElementSibling.textContent = t("btn.again.note");
+  $("tryagain").nextElementSibling.textContent = t("btn.retry.note");
+  $("change").nextElementSibling.textContent = t("btn.change.note");
+  $("limit-wrap").firstChild.textContent = t("limit.label") + " ";
+  for (const side of ["w", "b"]) $(`side-${side}`).querySelector("label").firstChild.textContent = t("player.app") + " ";
+  ["moves", "total", "avg", "longest", "illegal"].forEach((k, i) => { $("stats").querySelectorAll("th")[i + 1].textContent = t(`stats.${k}`); });
+  $("stats-note").textContent = t("stats.note");
+}
+
+// The end card shows a second after the game ends and takes clicks a second after that, so a click on the last
+// position cannot start a new game.
+const CARD_DELAY_MS = 1000;
+const CARD_LOCK_MS = 1000;
+let endedAt = 0;
+let cardTimer = 0;
+function cardState(m) {
+  const over = m.phase === "over" || m.phase === "error";
+  if (!over) { endedAt = 0; clearTimeout(cardTimer); return { shown: false, enabled: false }; }
+  if (!endedAt) {
+    endedAt = Date.now();
+    clearTimeout(cardTimer);
+    cardTimer = setTimeout(guard(() => { if (match) render(match); }), CARD_DELAY_MS);
+    setTimeout(guard(() => { if (match) render(match); }), CARD_DELAY_MS + CARD_LOCK_MS + 20);
+  }
+  const age = Date.now() - endedAt;
+  return { shown: age >= CARD_DELAY_MS, enabled: age >= CARD_DELAY_MS + CARD_LOCK_MS };
+}
+
+/** m:ss for a total, whole seconds for the rest; "—" when no reply was timed. */
+const statTotal = (ms) => (ms === null ? "—" : clockText(ms));
+const statSecs = (ms) => (ms === null ? "—" : `${Math.round(ms / 1000)} s`);
+
+function renderStats(m) {
+  const rows = replyStats(m.replies, m.refusals);
+  const body = $("stats").querySelector("tbody");
+  body.replaceChildren(
+    ...["w", "b"].map((side) => {
+      const r = rows[side];
+      const tr = document.createElement("tr");
+      for (const text of [t(side === "w" ? "side.white" : "side.black"), String(r.moves), statTotal(r.total), statSecs(r.avg), statSecs(r.longest), String(r.illegal)]) {
+        tr.append(Object.assign(document.createElement("td"), { textContent: text }));
+      }
+      return tr;
+    }),
+  );
+}
+
 function renderText(m) {
   const idle = m.phase === "idle";
   const finished = m.phase === "over";
   $("setup").hidden = !idle;
-  $("after").hidden = !(finished || m.phase === "error");
-  $("rematch").hidden = !finished;
-  $("swapcolours").hidden = !finished;
+  const failed = m.phase === "error";
+  const card = cardState(m);
+  $("after").hidden = !card.shown;
+  for (const id of ["rematch", "swapcolours", "tryagain", "change"]) $(id).disabled = !card.enabled;
+  $("rematch").parentElement.hidden = !finished;
+  $("swapcolours").parentElement.hidden = !finished;
+  $("tryagain").parentElement.hidden = !failed;
+  $("stats").hidden = !finished;
+  $("stats-note").hidden = !finished;
+  if (finished) renderStats(m);
   renderMoves(m);
-  renderRefusals(m);
-  const turn = m.chess.turn() === "w" ? m.players.w || "white" : m.players.b || "black";
+  renderInfo(m);
   $("status").textContent =
     m.phase === "starting" ? startingText(m) || t("status.startingPlayers")
     : m.phase === "playing" && !m.askedAt && m.startingUp ? startingLine(m)
-    : m.phase === "playing" ? t("status.toMove", { who: turn })
-    : m.phase === "over" ? m.result
-    : m.phase === "error" ? t("status.stopped", { error: m.error })
+    : m.phase === "playing" ? ""
+    : m.phase === "over" || m.phase === "error" ? ""
     : t("status.choose");
   const plies = m.chess.history().length;
-  $("result").textContent = finished ? t("result.moves", { result: m.result, n: Math.ceil(plies / 2) }) : "";
+  $("result").textContent = finished ? t("result.line", { result: m.result, n: Math.ceil(plies / 2) }) : failed ? t("status.stopped", { error: m.error }) : "";
   $("still").textContent = m.previous.length ? t("still") : "";
   for (const side of ["w", "b"]) {
     const who = $(`who-${side}`);
@@ -140,8 +233,8 @@ function renderText(m) {
     who.querySelector(".name").textContent = label ? `${t(side === "w" ? "side.white" : "side.black")} · ${label}` : "";
     who.classList.toggle("on", m.phase === "playing" && m.chess.turn() === side);
   }
+  $("limit-note").textContent = idle ? (initSeen && app.canReportDelivery !== true ? t("limit.noteOld") : t("limit.note")) : "";
   showHint();
-  $("log").replaceChildren(...m.log.slice(-30).map((t) => Object.assign(document.createElement("li"), { textContent: t })));
   const missing = idle ? missingChoice(setup) : "";
   $("start").disabled = !idle || !!missing;
   $("start-why").textContent = missing;
@@ -169,14 +262,17 @@ function showHint() {
     const turn = match.phase === "playing" && match.chess.turn() === side;
     const sent = match.sending && match.sending.to === match.players[side] ? Math.round((Date.now() - match.sending.since) / 1000) : null;
     const el = $(`who-${side}`).querySelector(".turn");
+    const mm = left !== null ? clockText(left * 1000) : "";
     el.textContent =
       sent !== null ? t("turn.sending", { secs: sent })
-      : turn ? (match.askedAt ? (left !== null ? t("turn.left", { time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` }) : t("turn.thinking", { secs })) : match.startingUp ? t("turn.starting") : t("turn.waiting"))
+      : turn ? (match.askedAt ? (left !== null ? t(left <= 10 ? "turn.low" : "turn.left", { time: mm }) : t("turn.thinking", { secs })) : match.startingUp ? t("turn.starting") : t("turn.waiting"))
+      : match.phase === "over" && match.timedOut === side ? t("turn.ranOut")
+      : match.phase === "playing" ? t("turn.idle")
       : "";
-    el.classList.toggle("low", turn && sent === null && left !== null && left <= 10);
+    el.classList.toggle("low", (turn && sent === null && left !== null && left <= 10) || (match.phase === "over" && match.timedOut === side));
   }
 }
-setInterval(showHint, 1000);
+setInterval(guard(showHint), 1000);
 
 const OTHER = "\u0000other";
 const modelChoices = new Map(); // type -> the answer of loadModels, once it came
@@ -218,7 +314,7 @@ function fillSetup() {
     pick.value = known ? setup[side].model : OTHER;
     other.hidden = known;
     other.value = known ? "" : setup[side].model;
-    note.textContent = got === null ? t("models.loading") : got.reason ? t("models.builtIn", { reason: got.reason }) : "";
+    note.textContent = got === null ? t("models.loading") : got.reason ? t("models.builtIn", { reason: got.reason }) : !known ? t("model.noteOther") : "";
   }
   $("versus").textContent = `${sideLabel(setup.w)}  vs  ${sideLabel(setup.b)}`;
   if (match) render(match);
@@ -240,7 +336,16 @@ function readSetup() {
   fillSetup();
 }
 
+/** "drag to turn, scroll to zoom" for five seconds, the first time a board is shown. */
+function showCameraHint() {
+  try { if (store.getItem("chess.camhint.v1")) return; store.setItem("chess.camhint.v1", "1"); } catch { /* shown every time without storage */ }
+  const el = $("camhint");
+  el.hidden = false;
+  setTimeout(guard(() => { el.hidden = true; }), 5000);
+}
+
 async function init() {
+  labelStatic();
   try {
     types = (await app.agents.types()).types;
   } catch (e) {
@@ -251,23 +356,24 @@ async function init() {
   limit = loadLimit(store);
   if (webglAvailable()) {
     try {
-      board3d = createBoard3d($("board"));
+      board3d = createBoard3d($("board"), { guard });
       $("board").classList.add("is-3d");
       $("boardtools").hidden = false;
-      $("resetview").addEventListener("click", () => board3d.resetView());
+      on($("resetview"), "click", () => board3d.resetView());
+      showCameraHint();
     } catch (e) {
       board3d = null; // the flat board takes over
     }
   }
   match = createMatch({ app, onChange: render, delivery: () => app.canReportDelivery === true });
   for (const side of ["w", "b"]) {
-    $(`type-${side}`).addEventListener("change", () => {
+    on($(`type-${side}`), "change", () => {
       // A new CLI has its own models: the old model text does not carry over.
       $(`model-${side}`).value = "";
       $(`model-${side}-other`).value = "";
       readSetup();
     });
-    $(`model-${side}`).addEventListener("change", () => {
+    on($(`model-${side}`), "change", () => {
       // "Other..." shows the box empty and waits for a name; a typed name is read on input
       if ($(`model-${side}`).value === OTHER) {
         $(`model-${side}-other`).hidden = false;
@@ -277,26 +383,28 @@ async function init() {
       }
       readSetup();
     });
-    $(`model-${side}-other`).addEventListener("input", readSetup);
+    on($(`model-${side}-other`), "input", readSetup);
   }
-  $("limit").addEventListener("change", () => {
+  on($("limit"), "change", () => {
     limit = Number($("limit").value);
     saveLimit(store, limit);
   });
-  $("swap").addEventListener("click", () => {
+  on($("swap"), "click", () => {
     setup = swapSides(setup);
     save(store, setup);
     fillSetup();
   });
-  $("start").addEventListener("click", () => {
+  on($("start"), "click", () => {
     match.limit = limit;
     void match.start(setup);
   });
-  $("rematch").addEventListener("click", () => void match.rematch());
-  $("swapcolours").addEventListener("click", () => void match.rematch({ swap: true }));
-  $("change").addEventListener("click", () => match.changePlayers());
+  on($("rematch"), "click", () => void match.rematch());
+  on($("swapcolours"), "click", () => void match.rematch({ swap: true }));
+  on($("change"), "click", () => match.changePlayers());
+  on($("tryagain"), "click", () => void match.tryAgain());
+  for (const b of document.querySelectorAll("#tabs [data-tab]")) on(b, "click", () => selectTab(b.dataset.tab));
   fillSetup();
   fillLimit();
 }
 
-void init();
+void guard(init)();

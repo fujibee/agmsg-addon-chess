@@ -121,7 +121,8 @@ export function webglAvailable() {
   } catch (_) { return false; }
 }
 
-export function createBoard3d(host) {
+/** `guard` wraps the callbacks the browser calls (pointer, wheel, resize, frame), so an error in one shows its own message and stack. */
+export function createBoard3d(host, { guard = (fn) => fn } = {}) {
   const renderer = new WebGLRenderer({ antialias: true, alpha: false, powerPreference: "default" });
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
@@ -262,16 +263,16 @@ export function createBoard3d(host) {
   }
   function resetView() { yaw = START.yaw; pitch = START.pitch; dist = START.dist; idle = true; }
   const el = renderer.domElement;
-  el.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; idle = false; el.setPointerCapture(e.pointerId); });
-  el.addEventListener("pointermove", (e) => {
+  el.addEventListener("pointerdown", guard((e) => { drag = { x: e.clientX, y: e.clientY }; idle = false; el.setPointerCapture(e.pointerId); }));
+  el.addEventListener("pointermove", guard((e) => {
     if (!drag) return;
     yaw -= (e.clientX - drag.x) * 0.006;
     pitch = Math.min(1.45, Math.max(0.35, pitch + (e.clientY - drag.y) * 0.004));
     drag = { x: e.clientX, y: e.clientY };
-  });
+  }));
   const end = () => { drag = null; };
   el.addEventListener("pointerup", end); el.addEventListener("pointercancel", end);
-  el.addEventListener("wheel", (e) => { e.preventDefault(); dist = Math.min(22, Math.max(7, dist * (1 + Math.sign(e.deltaY) * 0.06))); }, { passive: false });
+  el.addEventListener("wheel", guard((e) => { e.preventDefault(); dist = Math.min(22, Math.max(7, dist * (1 + Math.sign(e.deltaY) * 0.06))); }), { passive: false });
   el.addEventListener("dblclick", resetView);
 
   function resize() {
@@ -281,13 +282,13 @@ export function createBoard3d(host) {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
-  new ResizeObserver(resize).observe(host);
+  new ResizeObserver(guard(resize)).observe(host);
   resize();
 
   let running = true, raf = 0, lastFrame = performance.now();
   function frame_() {
     if (!running) return;
-    raf = requestAnimationFrame(frame_);
+    raf = requestAnimationFrame(next);
     const now = performance.now();
     if (idle) yaw += Math.min(0.1, (now - lastFrame) / 1000) * 0.12; // one full turn in about 52 s
     lastFrame = now;
@@ -295,11 +296,12 @@ export function createBoard3d(host) {
     aim();
     renderer.render(scene, camera);
   }
-  frame_();
-  document.addEventListener("visibilitychange", () => {
+  const next = guard(frame_);
+  next();
+  document.addEventListener("visibilitychange", guard(() => {
     running = !document.hidden;
-    if (running) { cancelAnimationFrame(raf); frame_(); }
-  });
+    if (running) { cancelAnimationFrame(raf); next(); }
+  }));
 
   return {
     setPosition,

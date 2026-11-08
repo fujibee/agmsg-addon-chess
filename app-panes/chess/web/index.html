@@ -12,45 +12,56 @@
       <div class="sides">
         <fieldset class="side" id="side-w">
           <legend>White</legend>
-          <label>CLI <select id="type-w"></select></label>
+          <label>Player app <select id="type-w"></select></label>
           <label id="model-w-wrap">Model <select id="model-w"></select></label>
           <input id="model-w-other" class="model-other" type="text" placeholder="model name" aria-label="Model name" autocomplete="off" spellcheck="false" hidden>
           <p class="model-note" id="model-w-note"></p>
         </fieldset>
-        <button id="swap" type="button" title="Swap the two sides" aria-label="Swap the two sides">&#8644;</button>
+        <button id="swap" type="button" title="White and Black trade player app and model." aria-label="Swap sides">&#8644; Swap sides</button>
         <fieldset class="side" id="side-b">
           <legend>Black</legend>
-          <label>CLI <select id="type-b"></select></label>
+          <label>Player app <select id="type-b"></select></label>
           <label id="model-b-wrap">Model <select id="model-b"></select></label>
           <input id="model-b-other" class="model-other" type="text" placeholder="model name" aria-label="Model name" autocomplete="off" spellcheck="false" hidden>
           <p class="model-note" id="model-b-note"></p>
         </fieldset>
       </div>
-      <label id="limit-wrap">Time per move <select id="limit"></select></label>
+      <label id="limit-wrap">Time limit per move <select id="limit"></select></label>
+      <p id="limit-note" class="note"></p>
       <p id="versus"></p>
       <button id="start" type="button" disabled>Start game</button>
       <span id="start-why" role="status"></span>
     </section>
     <p id="status" role="status"></p>
-    <details id="refusals" hidden><summary></summary><ul></ul></details>
     <p id="hint" role="status"></p>
     <div id="stage">
-      <div class="who who-b" id="who-b"><span class="dot"></span><span class="name"></span><span class="turn"></span></div>
+      <div class="who who-b" id="who-b"><span class="dot"></span><span class="name"></span><span class="turn"></span><span id="boardtools" hidden><button id="resetview" type="button" title="Back to the first view; the board turns slowly again until you drag it">Reset view</button></span></div>
       <div id="board" role="img" aria-label="Chess board"></div>
+      <p id="camhint" hidden>drag to turn, scroll to zoom</p>
       <div class="who who-w" id="who-w"><span class="dot"></span><span class="name"></span><span class="turn"></span></div>
     </div>
-    <div id="boardtools" hidden><button id="resetview" type="button" title="Back to the first view; the board turns slowly again until you drag it">Reset view</button></div>
     <section id="after" hidden>
       <p id="result"></p>
+      <table id="stats" hidden><thead><tr><th></th><th>Moves</th><th>Total</th><th>Avg</th><th>Longest</th><th>Illegal</th></tr></thead><tbody></tbody></table>
+      <p id="stats-note" class="note" hidden></p>
       <div class="buttons">
-        <button id="rematch" type="button">Rematch</button>
-        <button id="swapcolours" type="button">Swap colours</button>
-        <button id="change" type="button">Change players</button>
+        <div class="choice"><button id="rematch" type="button" class="primary">Play again</button><span class="note">same colors, same players</span></div>
+        <div class="choice far"><button id="swapcolours" type="button">Play again, swap colors</button></div>
+        <div class="choice"><button id="tryagain" type="button" class="primary">Try again</button><span class="note">start the same two players again</span></div>
+        <div class="choice"><button id="change" type="button">Choose new players</button><span class="note">the current two keep running until you close their panes</span></div>
       </div>
     </section>
     <p id="still"></p>
-    <div id="moves" aria-label="Moves"><table><thead><tr><th class="no">#</th><th>White</th><th>Black</th></tr></thead><tbody></tbody></table></div>
-    <ol id="log"></ol>
+    <section id="info" hidden>
+      <div id="tabs" role="tablist" aria-label="Game details">
+        <button type="button" role="tab" id="tab-moves" data-tab="moves" aria-selected="true"></button>
+        <button type="button" role="tab" id="tab-illegal" data-tab="illegal" aria-selected="false" hidden></button>
+        <button type="button" role="tab" id="tab-log" data-tab="log" aria-selected="false"></button>
+      </div>
+      <div id="moves" class="panel" role="tabpanel" aria-labelledby="tab-moves"><table><thead><tr><th class="no">#</th><th>White</th><th>Black</th></tr></thead><tbody></tbody></table></div>
+      <ul id="illegal" class="panel" role="tabpanel" aria-labelledby="tab-illegal" hidden></ul>
+      <ol id="log" class="panel" role="tabpanel" aria-labelledby="tab-log" hidden></ol>
+    </section>
   </main>
   <script type="module" src="app.js"></script>
 </body>
