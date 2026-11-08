@@ -59,11 +59,15 @@ test("the prompt carries the FEN, the move list and the reply format", () => {
   assert.equal(moveList(newGame()), "");
 });
 
-test("the prompt states the time limit only when there is one, and says a retry keeps the clock", () => {
+test("the prompt says the time first, with the seconds left, and nothing when there is no limit", () => {
   const g = newGame();
-  assert.doesNotMatch(turnPrompt(g), /Time limit/);
-  assert.match(turnPrompt(g, { limit: 120 }), /Time limit: reply within 2 minutes of receiving this message\. If it runs out you lose the game\./);
-  assert.match(turnPrompt(g, { limit: 30, problem: "e7e8 is not legal" }), /within 30 seconds .*clock for this move keeps running/);
+  assert.doesNotMatch(turnPrompt(g), /\bs for this move|Time limit/);
+  assert.doesNotMatch(turnPrompt(g, { left: 30 }), /for this move/, "no limit, nothing about time");
+  const p = turnPrompt(g, { first: true, limit: 60, left: 60 });
+  assert.equal(p.split("\n")[0], "You have 60 s for this move (60 s left). Reply before it runs out or you lose the game.");
+  assert.match(turnPrompt(g, { limit: 120, left: 37.2, problem: "e7e8 is not legal" }), /^You have 120 s for this move \(38 s left\)\./);
+  assert.equal(turnPrompt(g, { limit: 60, left: null }).split("\n")[0], "You have 60 s for this move. Reply before it runs out or you lose the game.", "an unknown remainder is left out, not invented");
+  assert.match(turnPrompt(g, { limit: 60, left: -3 }), /\(0 s left\)/);
   assert.deepEqual([30, 60, 120, 300].map(limitText), ["30 seconds", "1 minute", "2 minutes", "5 minutes"]);
 });
 

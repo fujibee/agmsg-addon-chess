@@ -365,7 +365,7 @@ test("with delivery reports, a side's clock starts at the notice for its ask, an
   assert.equal(m.deadline, t + 120_000);
   q.typed(m, "white", t + 4000, ["a0"]);
   assert.equal(m.askedAt, t, "a second report does not move the clock");
-  assert.match(q.sent[0].body, /Time limit: reply within 2 minutes/);
+  assert.match(q.sent[0].body, /^You have 120 s for this move \(120 s left\)\./);
   assert.equal(m.tick(t + 120_000 - 1), false);
   assert.equal(m.tick(t + 120_000), true);
   assert.equal(m.result, "White lost on time (2:00 limit).");
@@ -426,7 +426,7 @@ test("a retry keeps the move's clock; the next move starts a new one", async () 
   assert.equal(m.problems, 1);
   assert.equal(m.askedAt, t, "asking again does not restart the clock");
   assert.equal(m.deadline, t + 60_000);
-  assert.match(q.sent.at(-1).body, /clock for this move keeps running/);
+  assert.match(q.sent.at(-1).body, /^You have 60 s for this move \(\d+ s left\)\./, "the retry says what the same clock has left");
   await q.fed(m, 1);
   q.typed(m, "white", t + 3000, ["a1"]);
   assert.equal(m.askedAt, t, "the retry's notice does not restart it either");
@@ -447,7 +447,7 @@ test("without delivery reports a side's first move is untimed, shows starting, c
   assert.equal(m.deadline, 0);
   assert.equal(m.askedAt, 0, "nothing is counted while the player may still be starting");
   assert.equal(m.startingUp, true);
-  assert.doesNotMatch(q.sent[0].body, /Time limit/);
+  assert.doesNotMatch(q.sent[0].body, /for this move/);
   assert.ok(m.log.includes("White: no time limit on the first move (this app cannot report delivery)"));
   await q.reply(m, "white", "e2e4");
   assert.equal(m.deadline, 0, "black's first move is untimed too");
@@ -457,7 +457,7 @@ test("without delivery reports a side's first move is untimed, shows starting, c
   assert.equal(m.startingUp, false);
   assert.ok(m.askedAt > 0, "white's second move is counted from its send");
   assert.equal(m.deadline, m.askedAt + 120_000);
-  assert.match(q.sent.at(-1).body, /Time limit: reply within 2 minutes/);
+  assert.match(q.sent.at(-1).body, /^You have 120 s for this move \(120 s left\)\./);
   assert.equal(m.tick(m.deadline), true);
 });
 
@@ -471,7 +471,7 @@ test("no limit means no clock, no notice line and no limit in the prompt", async
   q.typed(m, "white", t, ["a0"]);
   assert.equal(m.askedAt, t);
   assert.equal(m.deadline, 0);
-  assert.doesNotMatch(q.sent[0].body, /Time limit/);
+  assert.doesNotMatch(q.sent[0].body, /for this move/);
   assert.equal(m.tick(Date.now() + 1e9), false);
   assert.equal(m.log.some((l) => /no time limit/.test(l)), false);
 });
@@ -630,4 +630,121 @@ test("Reply time exists only for moves whose clock a delivery report started", a
   await r.reply(d, "white", "e2e4");
   assert.equal(d.replies.w.length, 1);
   assert.ok(d.replies.w[0] >= 20 && d.replies.w[0] < 5000, `got ${d.replies.w[0]}`);
+});
+
+test("a retry after an illegal reply says the seconds the move's own clock has left", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: true });
+  m.limit = 120;
+  await m.start("claude-code");
+  const t = Date.now() + 5000;
+  await q.fed(m, 0);
+  q.typed(m, "white", t, ["a0"]);
+  await at(t + 45_000, async () => {
+    await q.reply(m, "white", "e2e5");
+  });
+  const retry = q.sent.at(-1).body;
+  assert.match(retry, /^You have 120 s for this move \(75 s left\)\./, "the clock started at the notice, 45 s ago");
+  assert.match(retry, /Your last reply was not accepted/);
+});
+
+test("a retry whose clock has not started does not invent a remainder", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: true });
+  m.limit = 120;
+  await m.start("claude-code");
+  await q.reply(m, "white", "e2e5");
+  assert.match(q.sent.at(-1).body, /^You have 120 s for this move\. Reply before/);
+});
+
+test("without a delivery report, a retry counts from the send", async () => {
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: false });
+  m.limit = 120;
+  await m.start("claude-code");
+  await q.reply(m, "white", "e2e4");
+  await q.reply(m, "black", "e7e5"); // each side's first move is untimed without a delivery report
+  const t = m.askedAt;
+  assert.ok(t > 0);
+  await at(t + 20_000, async () => {
+    await q.reply(m, "white", "e2e9");
+  });
+  assert.match(q.sent.at(-1).body, /^You have 120 s for this move \(100 s left\)\./);
+});
+
+// An app whose first send waits for `release()`, so a retry can be queued behind it; Date.now() is `clock.now`.
+function slowFirstSend() {
+  const clock = { now: 1_000_000 };
+  const sent = [];
+  let release;
+  let entered;
+  const gate = new Promise((r) => (release = r));
+  const first = new Promise((r) => (entered = r));
+  const app = {
+    team: { join: async () => ({ name: "chess" }) },
+    agents: { spawn: async (type, name) => ({ name, type, state: "running" }) },
+    messages: {
+      send: async (to, body) => {
+        sent.push({ to, body, at: Date.now() });
+        if (sent.length === 1) {
+          entered();
+          await gate;
+        }
+        return {};
+      },
+    },
+  };
+  return { app, sent, clock, release: () => release(), first };
+}
+
+test("a retry queued behind a slow send says what the clock has left when it is sent, not when it was queued", async () => {
+  const real = Date.now;
+  const s = slowFirstSend();
+  Date.now = () => s.clock.now;
+  try {
+    const m = createMatch({ app: s.app, delivery: true });
+    m.limit = 120;
+    const starting = m.start("claude-code");
+    await s.first;
+    await m.onMessage({ id: "a0", from: "chess", to: "white", body: s.sent[0].body });
+    m.onNotice({ name: "white", at: s.clock.now, ids: ["a0"] });
+    assert.equal(m.deadline, 1_120_000);
+    s.clock.now = 1_010_000;
+    const rejected = m.onMessage({ id: "r1", from: "white", to: "chess", body: "e2e5" }); // queued: 110 s left
+    s.clock.now = 1_060_000;
+    s.release();
+    await starting;
+    await rejected;
+    assert.equal(s.sent[1].at, 1_060_000);
+    assert.match(s.sent[1].body, /^You have 120 s for this move \(60 s left\)\./);
+    assert.match(s.sent[1].body, /Your last reply was not accepted/);
+  } finally {
+    s.release();
+    Date.now = real;
+  }
+});
+
+test("a delivery report that starts the clock while a retry is queued is counted in the retry's text", async () => {
+  const real = Date.now;
+  const s = slowFirstSend();
+  Date.now = () => s.clock.now;
+  try {
+    const m = createMatch({ app: s.app, delivery: true });
+    m.limit = 120;
+    const starting = m.start("claude-code");
+    await s.first;
+    const rejected = m.onMessage({ id: "r1", from: "white", to: "chess", body: "e2e5" }); // queued; no clock yet
+    assert.equal(m.deadline, 0);
+    await m.onMessage({ id: "a0", from: "chess", to: "white", body: s.sent[0].body });
+    m.onNotice({ name: "white", at: 1_000_000, ids: ["a0"] }); // the report starts the clock while the retry waits
+    assert.equal(m.deadline, 1_120_000);
+    s.clock.now = 1_030_000;
+    s.release();
+    await starting;
+    await rejected;
+    assert.match(s.sent[1].body, /^You have 120 s for this move \(90 s left\)\./);
+  } finally {
+    s.release();
+    Date.now = real;
+  }
 });
