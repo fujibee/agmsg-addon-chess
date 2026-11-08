@@ -1,4 +1,4 @@
-import { connect } from "./agmsg-addon.js";
+import { connect, guard } from "./agmsg-addon.js";
 import { createMatch, startingText, waitingHint } from "./match.js";
 import { moveRows, sanParts } from "./game.js";
 import { t } from "./strings.js";
@@ -11,6 +11,8 @@ const PIECE = {
   bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟",
 };
 const $ = (id) => document.getElementById(id);
+// Every callback the browser calls goes through guard, so an error in it shows its own message and stack (and reaches the app's log).
+const on = (el, ev, fn) => el.addEventListener(ev, guard(fn));
 
 let match = null;
 let board3d = null;
@@ -91,20 +93,43 @@ function renderMoves(m) {
   $("moves").scrollTop = $("moves").scrollHeight;
 }
 
-/** "N illegal moves", opening to which replies were not played and why; stays open while the game goes on. */
-function renderRefusals(m) {
-  const box = $("refusals");
+let tab = "moves";
+let seenIllegal = 0;
+
+function selectTab(name) {
+  tab = name;
+  for (const n of ["moves", "illegal", "log"]) {
+    $(`tab-${n}`).setAttribute("aria-selected", String(n === name));
+    $(n).hidden = n !== name;
+  }
+  if (name === "illegal") seenIllegal = match ? match.refusals.length : 0;
+  $("tab-illegal").classList.remove("bump");
+  if (name === "moves") $("moves").scrollTop = $("moves").scrollHeight;
+  if (name === "log") $("log").scrollTop = $("log").scrollHeight;
+}
+
+/** The strip under the board: the moves, the replies that were not played and why, and the pane's log. */
+function renderInfo(m) {
+  $("info").hidden = m.phase === "idle";
   const n = m.refusals.length;
-  box.hidden = n === 0;
-  if (n === 0) return;
-  box.querySelector("summary").textContent = n === 1 ? t("illegal.one") : t("illegal.other", { n });
-  box.querySelector("ul").replaceChildren(
+  if (n < seenIllegal) seenIllegal = 0; // a new game
+  const t_ = $("tab-illegal");
+  t_.hidden = n === 0;
+  t_.textContent = t("tab.illegal", { n });
+  if (n === 0 && tab === "illegal") selectTab("moves");
+  t_.classList.toggle("bump", tab !== "illegal" && n > seenIllegal);
+  if (tab === "illegal") seenIllegal = n;
+  $("tab-moves").textContent = t("tab.moves");
+  $("tab-log").textContent = t("tab.log");
+  $("illegal").replaceChildren(
     ...m.refusals.map((r) =>
       Object.assign(document.createElement("li"), {
         textContent: t("illegal.item", { ply: r.ply, side: t(r.side === "w" ? "side.white" : "side.black"), text: r.text, reason: r.reason }),
       }),
     ),
   );
+  $("log").replaceChildren(...m.log.slice(-30).map((line) => Object.assign(document.createElement("li"), { textContent: line })));
+  if (tab === "log") $("log").scrollTop = $("log").scrollHeight;
 }
 
 /** What the pane says while the side to move has not been told it is its turn and its player is still starting. */
@@ -122,12 +147,11 @@ function renderText(m) {
   $("rematch").hidden = !finished;
   $("swapcolours").hidden = !finished;
   renderMoves(m);
-  renderRefusals(m);
-  const turn = m.chess.turn() === "w" ? m.players.w || "white" : m.players.b || "black";
+  renderInfo(m);
   $("status").textContent =
     m.phase === "starting" ? startingText(m) || t("status.startingPlayers")
     : m.phase === "playing" && !m.askedAt && m.startingUp ? startingLine(m)
-    : m.phase === "playing" ? t("status.toMove", { who: turn })
+    : m.phase === "playing" ? ""
     : m.phase === "over" ? m.result
     : m.phase === "error" ? t("status.stopped", { error: m.error })
     : t("status.choose");
@@ -141,7 +165,6 @@ function renderText(m) {
     who.classList.toggle("on", m.phase === "playing" && m.chess.turn() === side);
   }
   showHint();
-  $("log").replaceChildren(...m.log.slice(-30).map((t) => Object.assign(document.createElement("li"), { textContent: t })));
   const missing = idle ? missingChoice(setup) : "";
   $("start").disabled = !idle || !!missing;
   $("start-why").textContent = missing;
@@ -176,7 +199,7 @@ function showHint() {
     el.classList.toggle("low", turn && sent === null && left !== null && left <= 10);
   }
 }
-setInterval(showHint, 1000);
+setInterval(guard(showHint), 1000);
 
 const OTHER = "\u0000other";
 const modelChoices = new Map(); // type -> the answer of loadModels, once it came
@@ -251,23 +274,23 @@ async function init() {
   limit = loadLimit(store);
   if (webglAvailable()) {
     try {
-      board3d = createBoard3d($("board"));
+      board3d = createBoard3d($("board"), { guard });
       $("board").classList.add("is-3d");
       $("boardtools").hidden = false;
-      $("resetview").addEventListener("click", () => board3d.resetView());
+      on($("resetview"), "click", () => board3d.resetView());
     } catch (e) {
       board3d = null; // the flat board takes over
     }
   }
   match = createMatch({ app, onChange: render, delivery: () => app.canReportDelivery === true });
   for (const side of ["w", "b"]) {
-    $(`type-${side}`).addEventListener("change", () => {
+    on($(`type-${side}`), "change", () => {
       // A new CLI has its own models: the old model text does not carry over.
       $(`model-${side}`).value = "";
       $(`model-${side}-other`).value = "";
       readSetup();
     });
-    $(`model-${side}`).addEventListener("change", () => {
+    on($(`model-${side}`), "change", () => {
       // "Other..." shows the box empty and waits for a name; a typed name is read on input
       if ($(`model-${side}`).value === OTHER) {
         $(`model-${side}-other`).hidden = false;
@@ -277,26 +300,27 @@ async function init() {
       }
       readSetup();
     });
-    $(`model-${side}-other`).addEventListener("input", readSetup);
+    on($(`model-${side}-other`), "input", readSetup);
   }
-  $("limit").addEventListener("change", () => {
+  on($("limit"), "change", () => {
     limit = Number($("limit").value);
     saveLimit(store, limit);
   });
-  $("swap").addEventListener("click", () => {
+  on($("swap"), "click", () => {
     setup = swapSides(setup);
     save(store, setup);
     fillSetup();
   });
-  $("start").addEventListener("click", () => {
+  on($("start"), "click", () => {
     match.limit = limit;
     void match.start(setup);
   });
-  $("rematch").addEventListener("click", () => void match.rematch());
-  $("swapcolours").addEventListener("click", () => void match.rematch({ swap: true }));
-  $("change").addEventListener("click", () => match.changePlayers());
+  on($("rematch"), "click", () => void match.rematch());
+  on($("swapcolours"), "click", () => void match.rematch({ swap: true }));
+  on($("change"), "click", () => match.changePlayers());
+  for (const b of document.querySelectorAll("#tabs [data-tab]")) on(b, "click", () => selectTab(b.dataset.tab));
   fillSetup();
   fillLimit();
 }
 
-void init();
+void guard(init)();

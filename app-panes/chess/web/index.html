@@ -32,14 +32,12 @@
       <span id="start-why" role="status"></span>
     </section>
     <p id="status" role="status"></p>
-    <details id="refusals" hidden><summary></summary><ul></ul></details>
     <p id="hint" role="status"></p>
     <div id="stage">
-      <div class="who who-b" id="who-b"><span class="dot"></span><span class="name"></span><span class="turn"></span></div>
+      <div class="who who-b" id="who-b"><span class="dot"></span><span class="name"></span><span class="turn"></span><span id="boardtools" hidden><button id="resetview" type="button" title="Back to the first view; the board turns slowly again until you drag it">Reset view</button></span></div>
       <div id="board" role="img" aria-label="Chess board"></div>
       <div class="who who-w" id="who-w"><span class="dot"></span><span class="name"></span><span class="turn"></span></div>
     </div>
-    <div id="boardtools" hidden><button id="resetview" type="button" title="Back to the first view; the board turns slowly again until you drag it">Reset view</button></div>
     <section id="after" hidden>
       <p id="result"></p>
       <div class="buttons">
@@ -49,8 +47,16 @@
       </div>
     </section>
     <p id="still"></p>
-    <div id="moves" aria-label="Moves"><table><thead><tr><th class="no">#</th><th>White</th><th>Black</th></tr></thead><tbody></tbody></table></div>
-    <ol id="log"></ol>
+    <section id="info" hidden>
+      <div id="tabs" role="tablist" aria-label="Game details">
+        <button type="button" role="tab" id="tab-moves" data-tab="moves" aria-selected="true"></button>
+        <button type="button" role="tab" id="tab-illegal" data-tab="illegal" aria-selected="false" hidden></button>
+        <button type="button" role="tab" id="tab-log" data-tab="log" aria-selected="false"></button>
+      </div>
+      <div id="moves" class="panel" role="tabpanel" aria-labelledby="tab-moves"><table><thead><tr><th class="no">#</th><th>White</th><th>Black</th></tr></thead><tbody></tbody></table></div>
+      <ul id="illegal" class="panel" role="tabpanel" aria-labelledby="tab-illegal" hidden></ul>
+      <ol id="log" class="panel" role="tabpanel" aria-labelledby="tab-log" hidden></ol>
+    </section>
   </main>
   <script type="module" src="app.js"></script>
 </body>

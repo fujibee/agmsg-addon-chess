@@ -10,7 +10,6 @@ const EN = {
   "status.startingPlayers": "Starting the players…",
   "status.stopped": "Stopped: {error}",
   "status.cannotStart": "Cannot start: {message}",
-  "status.toMove": "{who} to move",
   "status.startingLine": "Starting {side} ({label})… waiting for it to finish starting",
   "result.moves": "{result} {n} moves.",
   "still": "The previous players are still running; close their panes if you don't need them.",
@@ -24,8 +23,10 @@ const EN = {
   "hint.noAnswer": "{side} hasn't answered yet ({secs} s since the turn notice).",
   "hint.noAnswerAsked": "{side} hasn't answered yet ({secs} s since it was asked).",
 
-  "illegal.one": "1 illegal move",
-  "illegal.other": "{n} illegal moves",
+  "tab.moves": "Moves",
+  "tab.illegal": "Illegal ({n})",
+  "tab.log": "Log",
+  "tab.label": "Game details",
   "illegal.item": "Move {ply} ({side}): {text} — {reason}",
   "illegal.unreadable": "a reply that is not a move",
 
