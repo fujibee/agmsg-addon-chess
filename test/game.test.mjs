@@ -88,3 +88,14 @@ test("a move is split into the pieces the pane styles: figurine, capture, check,
   assert.deepEqual(kinds("e8=Q#", "w"), ["plain:e8", "promo:=\u2655", "check:#"]);
   assert.deepEqual(kinds("Nbd7", "b"), ["piece:\u265E", "plain:bd7"], "disambiguation stays plain");
 });
+
+test("replyStats counts every move, times only the ones with a reported notice, and never guesses", async () => {
+  const { replyStats, clockText } = await import("../app-panes/chess/web/game.js");
+  const s = replyStats({ w: [10000, null, 34000], b: [null] }, [{ side: "w" }, { side: "w" }, { side: "b" }]);
+  assert.deepEqual(s.w, { moves: 3, total: 44000, avg: 22000, longest: 34000, illegal: 2 });
+  assert.deepEqual(s.b, { moves: 1, total: null, avg: null, longest: null, illegal: 1 });
+  assert.deepEqual(replyStats({ w: [], b: [] }, []).w, { moves: 0, total: null, avg: null, longest: null, illegal: 0 });
+  assert.equal(clockText(65000), "1:05");
+  assert.equal(clockText(0), "0:00");
+  assert.equal(clockText(-5), "0:00");
+});

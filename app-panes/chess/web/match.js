@@ -1,7 +1,7 @@
 // One game: joins the team, starts the two players, and keeps asking the side to move until the game ends.
 // `app` is the agmsg add-on connection; everything else here is plain data, so a test can play a whole game.
 import { t } from "./strings.js";
-import { limitText, newGame, outcome, readUci, resultText, tryMove, turnPrompt } from "./game.js";
+import { limitText, newGame, outcome, readUci, resultText, tryMove, turnPrompt, clockText } from "./game.js";
 
 /**
  * A hint, never a stop: the side to move has not answered for a while. It says only that and for how long, since
@@ -78,6 +78,8 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     askId: "", // the id of the message that carried this ask, once the feed showed it
     deadline: 0, // when the side to move runs out of time, ms since epoch; 0 = no deadline
     timedOut: "", // the side that lost on time
+    replies: { w: [], b: [] }, // ms from the turn notice reaching the player to the move arriving; null when no notice was reported
+    failedBeforePlay: false, // the players could not be started: Try again is possible
     labels: { w: "", b: "" }, // "claude-code · haiku", shown at each side of the board
     sides: { w: null, b: null }, // what was chosen for each side: { type, model }
     spawned: 0, // how many agents this pane has started (the page never starts any before Start)
@@ -94,7 +96,9 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     m.log.push(text);
     onChange(m);
   };
+  let lastSetup = null; // what Start was given, so Try again can start the same pair again
   const fail = (e) => {
+    m.failedBeforePlay = m.phase === "starting";
     m.phase = "error";
     m.error = e?.message ?? String(e);
     onChange(m);
@@ -193,7 +197,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     m.phase = "over";
     m.timedOut = side;
     m.deadline = 0;
-    m.result = t("lost.time", { side: t(side === "w" ? "side.white" : "side.black"), limit: limitText(m.limit) });
+    m.result = t("lost.time", { side: t(side === "w" ? "side.white" : "side.black"), limit: clockText(m.limit * 1000) });
     say(t("log.outOfTime", { who: m.players[side] }));
     return true;
   };
@@ -203,6 +207,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     if (m.phase !== "idle") return;
     const sides = typeof setup === "string" ? { w: { type: setup, model }, b: { type: setup, model } } : setup;
     m.phase = "starting";
+    lastSetup = sides;
     onChange(m);
     try {
       m.me = (await app.team.join()).name;
@@ -247,6 +252,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     m.chess = newGame();
     m.problems = 0;
     m.refusals = [];
+    m.replies = { w: [], b: [] };
     m.result = "";
     m.timedOut = "";
     m.askedAt = 0;
@@ -294,6 +300,14 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     onChange(m);
   };
 
+  /** After an error: the same pair is started again (the old agents keep running, as with Change players). */
+  m.tryAgain = async () => {
+    if (m.phase !== "error" || !lastSetup) return;
+    const again = lastSetup;
+    m.changePlayers();
+    await m.start(again);
+  };
+
   m.onMessage = async (msg) => {
     // The feed also shows the add-on's own messages: this is how the ask learns its message id.
     if (msg.from === m.me && askPending && !m.askId && msg.to === askPending.to && msg.body === askPending.body) {
@@ -333,6 +347,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
         say(t("log.unreadable", { who: msg.from, error: read.error }));
         return await ask(read.error);
       }
+      const mover = m.chess.turn();
       const moved = tryMove(m.chess, read.uci);
       if (!moved.ok) {
         m.problems++;
@@ -340,6 +355,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
         say(t("log.refused", { who: msg.from, uci: read.uci, reason: moved.reason }));
         return await ask(moved.reason);
       }
+      m.replies[mover].push(m.askedAt ? Date.now() - m.askedAt : null);
       say(t("log.move", { who: msg.from, san: moved.san }));
       const end = outcome(m.chess);
       if (end) {

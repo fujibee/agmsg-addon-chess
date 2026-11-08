@@ -74,3 +74,28 @@ main:has(#board.is-3d) { max-width: 820px; }
 .panel[hidden] { display: none; }
 #illegal, #log { padding: 2px 8px 2px 1.6em; color: GrayText; font-size: 12px; }
 #status:empty { display: none; }
+
+/* Setup */
+.note { color: GrayText; font-size: 12px; margin: 2px 0 0; }
+.note:empty { display: none; }
+#swap { font-size: 13px; padding: 4px 10px; }
+#limit-wrap { flex-wrap: wrap; }
+/* The camera hint: shown for 5 seconds the first time a board is on screen. */
+#camhint { position: absolute; left: 0; right: 0; bottom: 36px; margin: 0; text-align: center; font-size: 12px; color: #fff; text-shadow: 0 1px 2px #000a; pointer-events: none; }
+#camhint[hidden] { display: none; }
+/* The end card. Buttons that start a game live only here, apart from each other, and cannot be pressed in the first second. */
+#after { margin-top: 8px; padding: 8px 10px; border: 1px solid #8884; border-radius: 8px; }
+#after[hidden] { display: none; }
+#after #result { margin: 0 0 6px; }
+#stats { border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12px; margin: 0 0 2px; }
+#stats th, #stats td { padding: 1px 10px 1px 0; text-align: left; font-weight: 400; }
+#stats th { color: GrayText; }
+#stats td:first-child { font-weight: 600; }
+#stats[hidden], #stats-note[hidden] { display: none; }
+#after .buttons { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; align-items: flex-start; }
+#after .choice { display: grid; gap: 2px; justify-items: start; }
+#after .choice.far { margin-left: auto; }
+#after .choice[hidden] { display: none; }
+#after button { font: inherit; padding: 5px 14px; border-radius: 6px; border: 1px solid #8886; background: transparent; color: inherit; cursor: pointer; }
+#after button.primary { background: #2a7d3f; border-color: #2a7d3f; color: #fff; font-weight: 600; }
+#after button:disabled { opacity: 0.45; cursor: not-allowed; }

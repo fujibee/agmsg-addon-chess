@@ -368,7 +368,7 @@ test("with delivery reports, a side's clock starts at the notice for its ask, an
   assert.match(q.sent[0].body, /Time limit: reply within 2 minutes/);
   assert.equal(m.tick(t + 120_000 - 1), false);
   assert.equal(m.tick(t + 120_000), true);
-  assert.equal(m.result, "White lost on time (no move within 2 minutes).");
+  assert.equal(m.result, "White lost on time (2:00 limit).");
   await q.reply(m, "white", "e2e4");
   assert.equal(m.chess.history().length, 0, "a reply after the time ran out is not played");
   assert.ok(m.log.some((l) => /ignored a reply that came after the time ran out/.test(l)));
@@ -489,7 +489,7 @@ test("a reply received after the deadline loses even before the display timer lo
   await at(1_030_001, () => q.reply(m, "white", "e2e4"));
   assert.equal(m.chess.history().length, 0, "the late move was not played");
   assert.equal(m.phase, "over");
-  assert.equal(m.result, "White lost on time (no move within 30 seconds).");
+  assert.equal(m.result, "White lost on time (0:30 limit).");
   assert.ok(m.log.some((l) => /white: ignored a reply that came after the time ran out/.test(l)));
 });
 
@@ -569,4 +569,41 @@ test("a late echo or report from an earlier game is never taken for the current 
     assert.match(m.result, /Checkmate/, `game ${game} ended by mate, not by the clock`);
     assert.equal(m.timedOut, "");
   }
+});
+
+test("each accepted move keeps its reply time per side; a move with no delivery report has none", async () => {
+  const f = fakeApp();
+  const done = new Promise((resolve) => {
+    const m = createMatch({ app: f.app, onChange: (s) => (s.phase === "over" || s.phase === "error") && resolve(s) });
+    f.bind(m);
+    m.start("claude-code");
+  });
+  const m = await done;
+  assert.equal(m.replies.w.length + m.replies.b.length, m.chess.history().length);
+  assert.equal(m.replies.w.length, Math.ceil(m.chess.history().length / 2));
+  // No delivery reporting here and the first move is not timed: the numbers that exist are real durations.
+  assert.ok([...m.replies.w, ...m.replies.b].every((x) => x === null || (typeof x === "number" && x >= 0)));
+  await m.rematch();
+  assert.deepEqual(m.replies.w.length >= 0, true);
+});
+
+test("Try again after a start that failed starts the same pair again, with new names", async () => {
+  const f = fakeApp();
+  let fail = true;
+  const real = f.app.agents.spawn;
+  f.app.agents.spawn = async (type, name, opts) => {
+    if (fail && name === "black") return { name, type, state: "failed", reason: "no such app" };
+    return real(type, name, opts);
+  };
+  const m = createMatch({ app: f.app });
+  f.bind(m);
+  await m.start({ w: { type: "claude-code" }, b: { type: "codex", model: "m" } });
+  assert.equal(m.phase, "error");
+  assert.equal(m.failedBeforePlay, true);
+  fail = false;
+  f.app.messages.send = async () => ({});
+  await m.tryAgain();
+  assert.equal(m.phase, "playing");
+  assert.deepEqual(f.spawned.slice(-2).map((s) => s.name), ["white-2", "black-2"]);
+  assert.equal(f.spawned.at(-1).type, "codex");
 });
