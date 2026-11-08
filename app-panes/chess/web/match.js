@@ -79,6 +79,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     deadline: 0, // when the side to move runs out of time, ms since epoch; 0 = no deadline
     timedOut: "", // the side that lost on time
     replies: { w: [], b: [] }, // ms from the turn notice reaching the player to the move arriving; null when no notice was reported
+    clockReported: false, // the running clock was started by a delivery report (not by the send time)
     failedBeforePlay: false, // the players could not be started: Try again is possible
     labels: { w: "", b: "" }, // "claude-code · haiku", shown at each side of the board
     sides: { w: null, b: null }, // what was chosen for each side: { type, model }
@@ -114,8 +115,9 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
   const runToken = Math.random().toString(36).slice(2, 10); // tells this match's asks from any earlier match's
   let askCount = 0;
   const delivered = new Map(); // message id -> { name, at }: delivery reports that may come before the feed shows the message
-  function startClock(at) {
+  function startClock(at, byReport = false) {
     m.askedAt = at;
+    m.clockReported = byReport; // only a delivery report makes the start a time worth showing as a reply time
     m.deadline = m.timed ? at + m.limit * 1000 : 0;
   }
   function ask(problem = "") {
@@ -130,6 +132,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
       // Without a delivery report a side's first move cannot be timed fairly: its pane may still be starting.
       m.timed = m.limit > 0 && (delivers() || !startingUp);
       if (m.limit > 0 && !m.timed) say(t("log.noLimitFirst", { side: t(side === "w" ? "side.white" : "side.black") }));
+      m.clockReported = false;
       m.askedAt = 0; // the clock starts once the turn notice is delivered, not while the player is still starting
       m.deadline = 0;
       m.askStart = Date.now();
@@ -172,7 +175,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     if (m.phase !== "playing" || m.askedAt !== 0 || !m.askId) return;
     if (!name || name !== m.players[m.chess.turn()]) return;
     if (Number.isFinite(at) && at < m.askStart) return; // a report from before this ask is about an earlier notice
-    startClock(Number.isFinite(at) ? at : Date.now());
+    startClock(Number.isFinite(at) ? at : Date.now(), true);
     onChange(m);
   }
 
@@ -355,7 +358,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
         say(t("log.refused", { who: msg.from, uci: read.uci, reason: moved.reason }));
         return await ask(moved.reason);
       }
-      m.replies[mover].push(m.askedAt ? Date.now() - m.askedAt : null);
+      m.replies[mover].push(m.askedAt && m.clockReported ? Date.now() - m.askedAt : null);
       say(t("log.move", { who: msg.from, san: moved.san }));
       const end = outcome(m.chess);
       if (end) {
