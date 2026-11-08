@@ -607,3 +607,27 @@ test("Try again after a start that failed starts the same pair again, with new n
   assert.deepEqual(f.spawned.slice(-2).map((s) => s.name), ["white-2", "black-2"]);
   assert.equal(f.spawned.at(-1).type, "codex");
 });
+
+test("Reply time exists only for moves whose clock a delivery report started", async () => {
+  // Old app (no reports): the clock after a side's first move runs from the send, but that is not a reply time.
+  const q = quietApp();
+  const m = createMatch({ app: q.app, delivery: false });
+  m.limit = 120;
+  await m.start("claude-code");
+  await q.reply(m, "white", "e2e4");
+  await q.reply(m, "black", "e7e5");
+  assert.ok(m.askedAt > 0, "the old-style clock still runs from the send");
+  await q.reply(m, "white", "g1f3");
+  assert.deepEqual(m.replies, { w: [null, null], b: [null] });
+  // With reports: the move whose notice was reported has a time, the others do not.
+  const r = quietApp();
+  const d = createMatch({ app: r.app, delivery: true });
+  d.limit = 120;
+  await d.start("claude-code");
+  await r.fed(d, 0);
+  r.typed(d, "white", Date.now(), ["a0"]);
+  await new Promise((res) => setTimeout(res, 30));
+  await r.reply(d, "white", "e2e4");
+  assert.equal(d.replies.w.length, 1);
+  assert.ok(d.replies.w[0] >= 20 && d.replies.w[0] < 5000, `got ${d.replies.w[0]}`);
+});
