@@ -248,9 +248,9 @@ export function createBoard3d(host, { guard = (fn) => fn } = {}) {
     }
   }
 
-  // The view: a slow turn that a drag stops; wheel zooms; resetView() brings back the first view and the turn.
+  // The view: a drag turns it; wheel zooms; resetView() brings back the first view.
   const START = { yaw: 0.0, pitch: 0.9, dist: 15.5 };
-  let yaw = START.yaw, pitch = START.pitch, dist = START.dist, idle = true, drag = null;
+  let yaw = START.yaw, pitch = START.pitch, dist = START.dist, drag = null;
   const target = new Vector3(0, 0.3, 0);
   function aim() {
     // A narrow pane stands further back; the fog and the far plane move back with it, or the board would sit in the fog.
@@ -261,19 +261,40 @@ export function createBoard3d(host, { guard = (fn) => fn } = {}) {
     camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d, Math.sin(pitch) * d, Math.cos(yaw) * Math.cos(pitch) * d).add(target);
     camera.lookAt(target);
   }
-  function resetView() { yaw = START.yaw; pitch = START.pitch; dist = START.dist; idle = true; }
+  function resetView() { yaw = START.yaw; pitch = START.pitch; dist = START.dist; wake(); }
   const el = renderer.domElement;
-  el.addEventListener("pointerdown", guard((e) => { drag = { x: e.clientX, y: e.clientY }; idle = false; el.setPointerCapture(e.pointerId); }));
+  el.addEventListener("pointerdown", guard((e) => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); }));
   el.addEventListener("pointermove", guard((e) => {
     if (!drag) return;
     yaw -= (e.clientX - drag.x) * 0.006;
     pitch = Math.min(1.45, Math.max(0.35, pitch + (e.clientY - drag.y) * 0.004));
     drag = { x: e.clientX, y: e.clientY };
+    wake();
   }));
   const end = () => { drag = null; };
   el.addEventListener("pointerup", end); el.addEventListener("pointercancel", end);
-  el.addEventListener("wheel", guard((e) => { e.preventDefault(); dist = Math.min(22, Math.max(7, dist * (1 + Math.sign(e.deltaY) * 0.06))); }), { passive: false });
+  el.addEventListener("wheel", guard((e) => { e.preventDefault(); dist = Math.min(22, Math.max(7, dist * (1 + Math.sign(e.deltaY) * 0.06))); wake(); }), { passive: false });
   el.addEventListener("dblclick", resetView);
+
+  // A frame is drawn only when something changed: a piece is sliding, the view moved, the pane was resized or
+  // came back to the screen. Nothing else asks the GPU for anything, so a still board costs no frames at all.
+  let running = true, raf = 0, disposed = false;
+  function frame_() {
+    raf = 0;
+    if (!running) return;
+    step(performance.now());
+    aim();
+    renderer.render(scene, camera);
+    if (tweens.length) wake(); // a piece is still on its way (or waiting for its turn to start)
+  }
+  const next = guard(frame_);
+  function wake() { if (running && !raf) raf = requestAnimationFrame(next); }
+  const onVisibility = guard(() => {
+    running = !document.hidden;
+    if (running) wake(); else { cancelAnimationFrame(raf); raf = 0; }
+  });
+  document.addEventListener("visibilitychange", onVisibility);
+  wake();
 
   function resize() {
     const w = Math.max(host.clientWidth, 200), h = Math.max(host.clientHeight, 200);
@@ -281,33 +302,29 @@ export function createBoard3d(host, { guard = (fn) => fn } = {}) {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    wake();
   }
-  new ResizeObserver(guard(resize)).observe(host);
+  const observer = new ResizeObserver(guard(resize));
+  observer.observe(host);
   resize();
 
-  let running = true, raf = 0, lastFrame = performance.now();
-  function frame_() {
-    if (!running) return;
-    raf = requestAnimationFrame(next);
-    const now = performance.now();
-    if (idle) yaw += Math.min(0.1, (now - lastFrame) / 1000) * 0.12; // one full turn in about 52 s
-    lastFrame = now;
-    step(performance.now());
-    aim();
-    renderer.render(scene, camera);
-  }
-  const next = guard(frame_);
-  next();
-  document.addEventListener("visibilitychange", guard(() => {
-    running = !document.hidden;
-    if (running) { cancelAnimationFrame(raf); next(); }
-  }));
 
   return {
-    setPosition,
+    setPosition(board, last) { setPosition(board, last); wake(); },
     renderOnce() { step(performance.now()); aim(); renderer.render(scene, camera); },
     resetView,
-    setView(v) { yaw = v.yaw ?? yaw; pitch = v.pitch ?? pitch; dist = v.dist ?? dist; idle = false; },
-    dispose() { running = false; cancelAnimationFrame(raf); renderer.dispose(); },
+    setView(v) { yaw = v.yaw ?? yaw; pitch = v.pitch ?? pitch; dist = v.dist ?? dist; wake(); },
+    /** Stops the frame, the observers and the listeners, and gives the GL context back. Safe to call twice. */
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      running = false;
+      cancelAnimationFrame(raf); raf = 0;
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
+      renderer.dispose();
+      renderer.forceContextLoss();
+      renderer.domElement.remove();
+    },
   };
 }
