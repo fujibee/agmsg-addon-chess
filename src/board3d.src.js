@@ -1,6 +1,7 @@
 // The 3D board. Built into app-panes/chess/web/board3d.js (see package.json "build"); three.js is bundled, nothing is fetched.
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { framing } from "./view.js";
+import { disposePiece } from "./dispose.js";
 import {
   ACESFilmicToneMapping, AmbientLight, BoxGeometry, ConeGeometry, CylinderGeometry, DirectionalLight, ExtrudeGeometry, Group,
   HemisphereLight, LatheGeometry, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, PlaneGeometry, Raycaster,
@@ -74,7 +75,7 @@ function coronetOn(group, y, mat) {
   ball.position.y = y + 0.2; ball.castShadow = true; group.add(ball);
 }
 
-export function makePiece(color, kind, mats) {
+function makePiece(color, kind, mats) {
   const mat = mats[color];
   const g = new Group();
   let body;
@@ -108,11 +109,6 @@ export function makePiece(color, kind, mats) {
     }
   }
   return g;
-}
-
-/** Gives back the GPU buffers of a piece that left the board. Its materials are shared by all pieces, so they stay. */
-export function disposePiece(group) {
-  group.traverse((o) => { if (o.isMesh && o.geometry) o.geometry.dispose(); });
 }
 
 const files = "abcdefgh";
