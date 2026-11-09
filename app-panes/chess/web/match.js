@@ -1,7 +1,7 @@
 // One game: joins the team, starts the two players, and keeps asking the side to move until the game ends.
 // `app` is the agmsg add-on connection; everything else here is plain data, so a test can play a whole game.
 import { t } from "./strings.js";
-import { limitText, newGame, outcome, readUci, resultText, tryMove, turnPrompt, clockText } from "./game.js";
+import { limitText, newGame, outcome, readUci, resultText, tryMove, timeLine, turnPrompt, clockText } from "./game.js";
 
 /**
  * A hint, never a stop: the side to move has not answered for a while. It says only that and for how long, since
@@ -142,9 +142,16 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
     const to = m.players[side];
     // Each ask carries its own reference, so a late echo of an earlier ask (an earlier game's, with the same
     // position and the same player) can never be taken for this one.
-    const body = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me, limit: m.timed ? m.limit : 0, ref: `${runToken}-${++askCount}` });
-    if (!m.askId) askPending = { to, body };
+    const timed = m.timed;
+    // The position and the rest of the text are made now; the time line is made when the send runs, so a retry queued
+    // behind a slow send says what the move's clock has left then, not what it had left when it was queued.
+    const rest = turnPrompt(m.chess, { first, problem, again: m.again, referee: m.me, limit: 0, ref: `${runToken}-${++askCount}` });
     const run = sends.then(async () => {
+      // A fresh ask has the whole limit (its clock starts when the notice arrives); a retry has what the move's own
+      // clock has left, or nothing to say when that clock has not started.
+      const left = fresh ? m.limit : m.deadline ? (m.deadline - Date.now()) / 1000 : null;
+      const body = timed ? `${timeLine(m.limit, left)}\n${rest}` : rest;
+      if (!m.askId) askPending = { to, body };
       m.sending = { to, since: Date.now() };
       if (fresh && mine === asks) {
         m.askedAt = 0;
