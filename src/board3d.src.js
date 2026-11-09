@@ -74,7 +74,7 @@ function coronetOn(group, y, mat) {
   ball.position.y = y + 0.2; ball.castShadow = true; group.add(ball);
 }
 
-function makePiece(color, kind, mats) {
+export function makePiece(color, kind, mats) {
   const mat = mats[color];
   const g = new Group();
   let body;
@@ -108,6 +108,11 @@ function makePiece(color, kind, mats) {
     }
   }
   return g;
+}
+
+/** Gives back the GPU buffers of a piece that left the board. Its materials are shared by all pieces, so they stay. */
+export function disposePiece(group) {
+  group.traverse((o) => { if (o.isMesh && o.geometry) o.geometry.dispose(); });
 }
 
 const files = "abcdefgh";
@@ -239,7 +244,7 @@ export function createBoard3d(host, { guard = (fn) => fn } = {}) {
       } else {
         w.group.scale.setScalar(Math.max(0.01, SCALE * (1 - e)));
         w.group.position.y = -0.4 * e;
-        if (t >= 1) pieces.remove(w.group);
+        if (t >= 1) { pieces.remove(w.group); disposePiece(w.group); } // a taken piece: its buffers would otherwise stay on the GPU for every game
       }
       if (t >= 1) {
         if (w.kind === "move") w.group.position.set(w.to.x, 0, w.to.z);
@@ -321,6 +326,11 @@ export function createBoard3d(host, { guard = (fn) => fn } = {}) {
       running = false;
       cancelAnimationFrame(raf); raf = 0;
       observer.disconnect();
+      scene.traverse((o) => {
+        if (o.isMesh && o.geometry) o.geometry.dispose();
+      });
+      for (const mat of [...Object.values(mats), lightSq, darkSq]) mat.dispose();
+      for (const sq of squares) sq.material.dispose();
       document.removeEventListener("visibilitychange", onVisibility);
       renderer.dispose();
       renderer.forceContextLoss();
