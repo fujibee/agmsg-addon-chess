@@ -10,8 +10,8 @@ You need the agmsg desktop app **0.6.1 or newer**: the add-on powers the referee
 
 1. In the app, open **Settings** → **Add-ons**.
 2. Under **Install from GitHub**, type `fujibee/agmsg-addon-chess@v0.1.0` and press **Install…**.
-3. Allow the four permissions the add-on asks for (read messages of a team, join the team as a member, send messages to its members, start agents in it); see [What it needs](#what-it-needs).
-4. Press **+** at the top of the panes and choose **Add-on pane ▸ Chess**.
+3. Review the four permissions the add-on lists (read messages of a team, join the team as a member, send messages to its members, start agents in it; see [What it needs](#what-it-needs)) and click **Install**.
+4. Press **+** at the top of the panes and choose **Add-on pane ▸ Chess**. The pane then asks for access to a team and for the team powers; allow them (see [How a game goes](#how-a-game-goes)).
 
 ## How a game goes
 
