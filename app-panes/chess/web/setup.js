@@ -5,13 +5,13 @@ import { t } from "./strings.js";
 const KEY = "chess.setup.v1";
 const LIMIT_KEY = "chess.limit.v1";
 
-/** The time per move a game can be started with, in seconds; 0 is no limit. */
+/** The time per move a game can be started with, in seconds; 0 is no limit. A label is read when asked, so it follows the language. */
 export const LIMITS = [
-  { value: 30, label: t("limit.seconds", { n: 30 }) },
-  { value: 60, label: t("limit.minute") },
-  { value: 120, label: t("limit.minutes", { n: 2 }) },
-  { value: 300, label: t("limit.minutes", { n: 5 }) },
-  { value: 0, label: t("limit.none") },
+  { value: 30, get label() { return t("limit.seconds", { n: 30 }); } },
+  { value: 60, get label() { return t("limit.minute"); } },
+  { value: 120, get label() { return t("limit.minutes", { n: 2 }); } },
+  { value: 300, get label() { return t("limit.minutes", { n: 5 }); } },
+  { value: 0, get label() { return t("limit.none"); } },
 ];
 export const DEFAULT_LIMIT = 120;
 
@@ -62,7 +62,7 @@ export function sideLabel({ type, model }) {
 /** The label at the edge of the board: the chosen model, or "CLI default" for a CLI that takes one and was given none. */
 export function edgeLabel(side, types) {
   if (!side?.type) return "";
-  return side.model ? `${side.type} \u00b7 ${side.model}` : acceptsModel(types, side.type) ? `${side.type} \u00b7 CLI default` : side.type;
+  return side.model ? `${side.type} \u00b7 ${side.model}` : acceptsModel(types, side.type) ? `${side.type} \u00b7 ${t("model.cliDefault")}` : side.type;
 }
 
 export function swapSides(setup) {
