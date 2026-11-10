@@ -357,6 +357,8 @@ async function init() {
   if (webglAvailable()) {
     try {
       board3d = createBoard3d($("board"), { guard });
+      // The page going away (a reload, the pane closing) gives the board's GL context and frame back at once.
+      on(window, "pagehide", () => board3d?.dispose());
       $("board").classList.add("is-3d");
       $("boardtools").hidden = false;
       on($("resetview"), "click", () => board3d.resetView());
