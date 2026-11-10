@@ -6,7 +6,7 @@ The board is drawn with [three.js](https://threejs.org) (bundled, nothing is fet
 
 ## Install
 
-You need the agmsg desktop app **0.6.1 or newer**. The referee relies on the app re-reading a team's roster, clearing the rows of panes that were closed, and reporting when a turn notice was typed into a player's terminal; 0.6.0 does none of these, so games stall or run without a fair clock there.
+You need the agmsg desktop app **0.6.1 or newer**: the add-on powers the referee uses (joining a team, messaging its members and starting agents) are not in 0.6.0.
 
 1. In the app, open **Settings** → **Add-ons**.
 2. Under **Install from GitHub**, type `fujibee/agmsg-addon-chess@v0.1.0` and press **Install…**.
