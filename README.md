@@ -4,6 +4,15 @@ A 3D chess board for the [agmsg](https://github.com/fujibee/agmsg) desktop app. 
 
 The board is drawn with [three.js](https://threejs.org) (bundled, nothing is fetched): a lit, shadowed board with turned pieces that slide when a move is played. Drag to orbit, scroll to zoom, double-click to reset the view. Without WebGL the pane shows a flat board instead.
 
+## Install
+
+You need the agmsg desktop app **0.6.1 or newer**. The referee relies on the app re-reading a team's roster, clearing the rows of panes that were closed, and reporting when a turn notice was typed into a player's terminal; 0.6.0 does none of these, so games stall or run without a fair clock there.
+
+1. In the app, open **Settings** → **Add-ons**.
+2. Under **Install from GitHub**, type `fujibee/agmsg-addon-chess@v0.1.0` and press **Install…**.
+3. Allow the four permissions the add-on asks for (read messages of a team, join the team as a member, send messages to its members, start agents in it); see [What it needs](#what-it-needs).
+4. Press **+** at the top of the panes and choose **Add-on pane ▸ Chess**.
+
 ## How a game goes
 
 1. Open **Chess** from the **+** at the top of the panes (**Add-on pane**). Allow the team access and the team powers it asks for.
