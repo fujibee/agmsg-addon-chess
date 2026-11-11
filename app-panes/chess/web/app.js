@@ -1,7 +1,7 @@
-import { connect, guard } from "./agmsg-addon.js";
+import { connect, guard, pickLocale } from "./agmsg-addon.js";
 import { createMatch, startingText, waitingHint } from "./match.js";
 import { clockText, moveRows, replyStats, sanParts } from "./game.js";
-import { t } from "./strings.js";
+import { LOCALES, setLocale, t } from "./strings.js";
 import { createBoard3d, webglAvailable } from "./board3d.js";
 import { loadModels, optionText } from "./models.js";
 import { DEFAULT_LIMIT, LIMITS, acceptsModel, defaultSetup, edgeLabel, load, loadLimit, save, saveLimit, sideLabel, swapSides } from "./setup.js";
@@ -43,6 +43,18 @@ const app = connect({
     if (match) match.onNotice(notice);
   },
 });
+
+/** Shows the pane in the app's language: the table, the fixed labels, the choices and everything drawn from the match. */
+function applyLocale(tag) {
+  document.documentElement.lang = setLocale(pickLocale(tag, LOCALES));
+  labelStatic();
+  if (types.length) {
+    fillSetup();
+    fillLimit();
+  }
+  if (match) render(match);
+}
+app.onLocaleChange(applyLocale);
 
 function render(m) {
   const board = $("board");
@@ -147,6 +159,20 @@ function startingLine(m) {
 function labelStatic() {
   const set = (id, key) => { $(id).textContent = t(key); };
   set("swap", "btn.swap");
+  set("start", "btn.start");
+  $("resetview").title = t("btn.reset.title");
+  $("board").setAttribute("aria-label", t("board.aria"));
+  $("tabs").setAttribute("aria-label", t("tab.label"));
+  for (const side of ["w", "b"]) {
+    $(`side-${side}`).querySelector("legend").textContent = t(side === "w" ? "side.white" : "side.black");
+    $(`model-${side}-wrap`).firstChild.textContent = t("model.label") + " ";
+    $(`model-${side}-other`).placeholder = t("model.placeholder");
+    $(`model-${side}-other`).setAttribute("aria-label", t("model.aria"));
+  }
+  const heads = $("moves").querySelectorAll("th");
+  heads[0].textContent = t("moves.no");
+  heads[1].textContent = t("side.white");
+  heads[2].textContent = t("side.black");
   $("swap").title = t("btn.swap.title");
   $("swap").setAttribute("aria-label", t("btn.swap"));
   set("resetview", "btn.reset");
@@ -305,10 +331,10 @@ function fillSetup() {
     wantModels(setup[side].type);
     const got = modelChoices.get(setup[side].type);
     const list = got?.options ?? [];
-    const choices = list.some((o) => o.value === "") ? list : [{ value: "", label: "CLI default", description: "" }, ...list];
+    const choices = list.some((o) => o.value === "") ? list : [{ value: "", label: t("model.cliDefault"), description: "" }, ...list];
     pick.replaceChildren(
       ...choices.map((o) => Object.assign(document.createElement("option"), { value: o.value, textContent: optionText(o) })),
-      Object.assign(document.createElement("option"), { value: OTHER, textContent: "Other\u2026" }),
+      Object.assign(document.createElement("option"), { value: OTHER, textContent: t("model.other") }),
     );
     const known = choices.some((o) => o.value === setup[side].model);
     pick.value = known ? setup[side].model : OTHER;
@@ -316,7 +342,7 @@ function fillSetup() {
     other.value = known ? "" : setup[side].model;
     note.textContent = got === null ? t("models.loading") : got.reason ? t("models.builtIn", { reason: got.reason }) : !known ? t("model.noteOther") : "";
   }
-  $("versus").textContent = `${sideLabel(setup.w)}  vs  ${sideLabel(setup.b)}`;
+  $("versus").textContent = t("versus", { a: sideLabel(setup.w), b: sideLabel(setup.b) });
   if (match) render(match);
 }
 
@@ -345,6 +371,7 @@ function showCameraHint() {
 }
 
 async function init() {
+  document.documentElement.lang = setLocale(pickLocale(app.locale, LOCALES));
   labelStatic();
   try {
     types = (await app.agents.types()).types;

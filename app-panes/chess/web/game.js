@@ -145,7 +145,7 @@ export function turnPrompt(chess, { first = false, problem = "", again = false, 
 
 export function resultText(o) {
   switch (o.kind) {
-    case "checkmate": return t("end.checkmate", { winner: o.winner });
+    case "checkmate": return t("end.checkmate", { winner: t(`end.winner.${o.winner}`) });
     case "stalemate": return t("end.stalemate");
     case "repetition": return t("end.repetition");
     case "insufficient": return t("end.insufficient");

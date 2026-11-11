@@ -240,7 +240,7 @@ export function createMatch({ app, onChange = () => {}, delivery = false }) {
           const problem = spawnProblem(entry, want);
           if (problem) throw new Error(problem);
           m.progress[side] = { state: "ready", since: Date.now() };
-          say(t("log.entry", { name: entry.name, side: side === "w" ? "white" : "black", state: entry.state }));
+          say(t("log.entry", { name: entry.name, side: t(side === "w" ? "side.lower.white" : "side.lower.black"), state: entry.state }));
         } catch (e) {
           m.progress[side] = { state: "failed", since: Date.now() };
           throw e;

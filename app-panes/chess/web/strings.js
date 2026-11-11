@@ -4,6 +4,8 @@
 const EN = {
   "side.white": "White",
   "side.black": "Black",
+  "side.lower.white": "white",
+  "side.lower.black": "black",
   "player": "player",
 
   "status.choose": "Choose the two players and start.",
@@ -29,6 +31,7 @@ const EN = {
   "tab.illegal": "Illegal ({n})",
   "tab.log": "Log",
   "tab.label": "Game details",
+  "moves.no": "#",
   "btn.swap": "⇄ Swap sides",
   "btn.swap.title": "White and Black trade player app and model.",
   "btn.reset": "Reset view",
@@ -45,6 +48,15 @@ const EN = {
   "limit.noteOld": "This app does not report when a turn notice reaches a player, so each side's first move is not timed.",
   "model.noteOther": "Not in the list; used as typed.",
   "player.app": "Player app",
+  "model.label": "Model",
+  "model.cliDefault": "CLI default",
+  "model.other": "Other…",
+  "model.placeholder": "model name",
+  "model.aria": "Model name",
+  "btn.start": "Start game",
+  "btn.reset.title": "Back to the first view",
+  "board.aria": "Chess board",
+  "versus": "{a}  vs  {b}",
   "stats.moves": "Moves",
   "stats.total": "Total",
   "stats.avg": "Avg",
@@ -86,6 +98,8 @@ const EN = {
   "end.insufficient": "Draw: not enough material to mate.",
   "end.fifty": "Draw by the fifty-move rule.",
   "end.default": "The game is over.",
+  "end.winner.white": "white",
+  "end.winner.black": "black",
 
   "spawn.failed": "{want} could not start: {reason}",
   "spawn.unknownReason": "unknown reason",
@@ -95,10 +109,131 @@ const EN = {
   "spawn.other": "{want} ({name}) is {state} but has no running agent{why}. Open Settings > Add-ons and choose \"Open\", then start again.",
 };
 
+// The Japanese table has exactly the keys of EN (a test holds it to that). Technical terms (CLI, UCI, FEN, SAN, model
+// names) and the agent app names stay as they are.
+const JA = {
+  "side.white": "白",
+  "side.black": "黒",
+  "side.lower.white": "白",
+  "side.lower.black": "黒",
+  "player": "プレイヤー",
+
+  "status.choose": "2人のプレイヤーを選んで開始してください。",
+  "status.startingPlayers": "2人のプレイヤーを起動しています(Claude は約20秒かかります)。起動中は時計は動きません。",
+  "status.stopped": "停止しました: {error}",
+  "status.cannotStart": "開始できません: {message}",
+  "status.startingLine": "{side}({label})を起動しています… 起動の完了を待っています",
+  "still": "前のプレイヤーがまだ動いています。不要なら、そのペインを閉じてください。",
+
+  "turn.sending": "送信中… {secs}秒",
+  "turn.thinking": "考え中… {secs}秒",
+  "turn.left": "残り {time}",
+  "turn.low": "残り {time} 時間わずか",
+  "turn.ranOut": "0:00 時間切れ",
+  "turn.idle": "—",
+  "turn.starting": "起動中…",
+  "turn.waiting": "プレイヤーを待っています…",
+
+  "hint.noAnswer": "{side}はまだ返事をしていません(手番の通知から {secs} 秒)。",
+  "hint.noAnswerAsked": "{side}はまだ返事をしていません(依頼から {secs} 秒)。",
+
+  "tab.moves": "手順",
+  "tab.illegal": "反則({n})",
+  "tab.log": "ログ",
+  "tab.label": "対局の詳細",
+  "moves.no": "#",
+  "btn.swap": "⇄ 先後を入れ替える",
+  "btn.swap.title": "白と黒で、プレイヤーのアプリとモデルを入れ替えます。",
+  "btn.reset": "視点をリセット",
+  "btn.reset.title": "最初の視点に戻します",
+  "btn.again": "もう一局",
+  "btn.again.note": "同じ色、同じプレイヤー",
+  "btn.swapAgain": "もう一局(先後を入れ替え)",
+  "btn.retry": "やり直す",
+  "btn.retry.note": "同じ2人のプレイヤーをもう一度起動します",
+  "btn.change": "プレイヤーを選び直す",
+  "btn.change.note": "今の2人は、ペインを閉じるまで動き続けます",
+  "btn.start": "対局を開始",
+  "hint.camera": "ドラッグで回転、スクロールでズーム",
+  "board.aria": "チェス盤",
+  "limit.label": "1手あたりの持ち時間",
+  "limit.note": "各プレイヤーは、この時間内に1手を送ります。時計は、手番の通知がプレイヤーに届いたときに始まります。",
+  "limit.noteOld": "このアプリは、手番の通知がプレイヤーに届いたことを報告しないため、各側の最初の1手は計時されません。",
+  "model.label": "モデル",
+  "model.cliDefault": "CLI のデフォルト",
+  "model.other": "その他…",
+  "model.placeholder": "モデル名",
+  "model.aria": "モデル名",
+  "model.noteOther": "一覧にありません。入力どおりに使います。",
+  "player.app": "プレイヤーのアプリ",
+  "versus": "{a}  vs  {b}",
+  "stats.moves": "手数",
+  "stats.total": "合計",
+  "stats.avg": "平均",
+  "stats.longest": "最長",
+  "stats.illegal": "反則",
+  "stats.note": "返信時間: 手番の通知がプレイヤーに届いてから、その手が届くまで。",
+  "result.line": "{result} · {n}手",
+  "illegal.hint": "指せなかった返信です。プレイヤーにもう一度依頼します。",
+  "illegal.item": "{ply}手目({side}): {text} — {reason}",
+  "illegal.unreadable": "手ではない返信",
+
+  "setup.choosePlayer": "{name}のプレイヤーを選んでください。",
+  "setup.typeModel": "{name}のモデル名を入力するか、一覧から選んでください。",
+  "models.loading": "モデルを読み込んでいます…",
+  "models.builtIn": "内蔵の一覧を表示しています: {reason}",
+  "limit.seconds": "{n}秒",
+  "limit.minute": "1分",
+  "limit.minutes": "{n}分",
+  "limit.none": "制限なし",
+
+  "starting.none": "{name}…",
+  "starting.ready": "{name} 準備完了",
+  "starting.failed": "{name}を起動できませんでした",
+  "starting.wait": "{name}を起動中… {secs}秒",
+
+  "log.noLimitFirst": "{side}: 最初の1手は持ち時間なし(このアプリは配達の報告ができません)",
+  "log.outOfTime": "{who}: 時間切れ",
+  "log.lateReply": "{who}: 時間切れの後に届いた返信を無視しました",
+  "log.oldReply": "{who}: この対局の開始前に書かれた返信を無視しました",
+  "log.unreadable": "{who}: {error}。もう一度依頼します",
+  "log.refused": "{who}: {uci} は受け付けられません({reason})。もう一度依頼します",
+  "log.move": "{who}: {san}",
+  "log.entry": "{name}({side})は {state} です",
+
+  "lost.time": "{side}の時間切れ負けです(持ち時間 {limit})。",
+  "end.checkmate": "チェックメイト。{winner}の勝ちです。",
+  "end.stalemate": "ステイルメイトで引き分けです。",
+  "end.repetition": "同一局面の3回繰り返しで引き分けです。",
+  "end.insufficient": "引き分け: チェックメイトに必要な駒が足りません。",
+  "end.fifty": "50手ルールで引き分けです。",
+  "end.default": "対局は終了しました。",
+  "end.winner.white": "白",
+  "end.winner.black": "黒",
+
+  "spawn.failed": "{want}を起動できませんでした: {reason}",
+  "spawn.unknownReason": "理由は不明です",
+  "spawn.orphaned": "{want}({name})は、アプリの再起動前から動き続けていますが{pid}、このペインはつながっていません。Settings > Add-ons を開いて「Open new」か「Leave it」を選んでから、もう一度開始してください。",
+  "spawn.pid": "(プロセス {pid})",
+  "spawn.unknown": "{want}({name})は、アプリが止まったとき起動中でした{why}。アプリは自動では開き直しません。Settings > Add-ons を開いて「Open new」か「Leave it」を選んでから、もう一度開始してください。",
+  "spawn.other": "{want}({name})は {state} ですが、動いているエージェントがありません{why}。Settings > Add-ons を開いて「Open」を選んでから、もう一度開始してください。",
+};
+
+const TABLES = { en: EN, ja: JA };
+let table = EN;
+
+/** Chooses the table for a language tag: "ja" gets Japanese, anything the pane has no table for gets English. */
+export function setLocale(lang) {
+  table = TABLES[lang] ?? EN;
+  return table === JA ? "ja" : "en";
+}
+
 /** The text for `key` with {name} placeholders filled from `vars`; an unknown key shows as itself. */
 export function t(key, vars = {}) {
-  const text = EN[key] ?? key;
+  const text = table[key] ?? EN[key] ?? key;
   return text.replace(/\{(\w+)\}/g, (_, name) => (name in vars ? String(vars[name]) : `{${name}}`));
 }
 
+export const LOCALES = Object.keys(TABLES);
 export const STRING_KEYS = Object.keys(EN);
+export const TABLE_KEYS = (lang) => Object.keys(TABLES[lang] ?? {});
